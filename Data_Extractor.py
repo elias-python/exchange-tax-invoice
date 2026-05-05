@@ -2,22 +2,13 @@ import win32com.client
 import pythoncom
 import os
 import pandas as pd
-from datetime import datetime
-import pdfplumber
+from datetime import datetime, timedelta
 import re
-import pytesseract
-import cv2
-import numpy as np
-from PIL import Image
-import fitz
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
 import unicodedata
 import sqlite3
-
-# --- CONFIGURAÇÃO OCR ---
-pytesseract.pytesseract.tesseract_cmd = r'C:\Users\esantan3\OneDrive - The Mosaic Company\Área de Trabalho\Projetos\tesseract-main\tesseract.exe'
 
 # --- CAMINHOS ---
 PASTA_ANEXOS = r"C:\Users\esantan3\OneDrive - The Mosaic Company\Área de Trabalho\Projetos\Exchange Tax Invoice\Folder XML_PDF"
@@ -25,418 +16,329 @@ ARQUIVO_FINAL = r"C:\Users\esantan3\OneDrive - The Mosaic Company\Área de Traba
 BANCO_SQLITE = r"C:\Users\esantan3\OneDrive - The Mosaic Company\Área de Trabalho\Projetos\Exchange Tax Invoice\Final Report\Banco_Controle_Trocas.db"
 
 # --- LISTA DE ASSISTENTES ---
-LISTA_ASSISTENTES = [
-    "Todos os Assistentes",
-    "Fernando Rodrigues",
-    "Gustavo Chaves",
-    "João Teixeira",
-    "José Viana",
-    "Vitória Nunes"
-]
+LISTA_ASSISTENTES = ["Todos os Assistentes", "Fernando Rodrigues", "Gustavo Chaves", "João Teixeira", "José Viana", "Vitória Nunes", "João Costa"]
 
 class AppMosaicMaster:
     def __init__(self, root):
         self.root = root
-        self.root.title("Mosaic Tool v10.0 - Motor SQLite (Anti-Duplicação)")
-        self.root.geometry("750x600")
-        self.root.configure(bg="#f4f6f9")
+        self.root.title("Monitor de Trocas - The Mosaic Company")
+        self.root.geometry("800x650")
+        self.root.configure(bg="#F4F6F9") # Fundo cinza claro corporativo
         
+        self.is_running = False
+        self.auto_mode = tk.BooleanVar(value=True)
+        self.intervalo_min = tk.IntVar(value=15)
+        self.tempo_restante = self.intervalo_min.get() * 60
+
+        # --- ESTILIZAÇÃO CORPORATIVA ---
         style = ttk.Style()
         style.theme_use('clam')
-        style.configure("TLabel", background="#f4f6f9", font=("Segoe UI", 10))
-        style.configure("TButton", font=("Segoe UI", 10, "bold"), background="#004a8d", foreground="white")
+        style.configure("TProgressbar", thickness=15, background="#004B87")
+        style.configure("Title.TLabel", font=("Segoe UI", 18, "bold"), foreground="#FFFFFF", background="#004B87")
+        style.configure("Subtitle.TLabel", font=("Segoe UI", 10), foreground="#CCE0FF", background="#004B87")
+        
+        # Painel Central Branco
+        style.configure("Card.TFrame", background="#FFFFFF", relief="flat")
+        style.configure("Clock.TLabel", font=("Segoe UI Light", 36), foreground="#004B87", background="#FFFFFF")
+        style.configure("Status.TLabel", font=("Segoe UI", 11), foreground="#333333", background="#FFFFFF")
+        
+        style.configure("TButton", font=("Segoe UI", 10, "bold"), background="#004B87", foreground="white", borderwidth=0)
         style.map("TButton", background=[("active", "#003366")])
 
-        titulo = tk.Label(root, text="Monitoramento de Troca de Notas", font=("Segoe UI", 14, "bold"), bg="#f4f6f9", fg="#004a8d")
-        titulo.pack(pady=(20, 10))
+        # --- CABEÇALHO ---
+        frame_top = tk.Frame(root, bg="#004B87", height=80)
+        frame_top.pack(fill="x")
+        ttk.Label(frame_top, text="THE MOSAIC COMPANY", style="Title.TLabel").pack(pady=(15, 2))
+        ttk.Label(frame_top, text="Monitoramento Automatizado de Troca de Notas Fiscais", style="Subtitle.TLabel").pack(pady=(0, 15))
+
+        # --- PAINEL CENTRAL (CARD) ---
+        frame_center = ttk.Frame(root, style="Card.TFrame", padding=30)
+        frame_center.pack(pady=30, padx=40, fill="both", expand=True)
+
+        self.lbl_clock = ttk.Label(frame_center, text="15:00", style="Clock.TLabel")
+        self.lbl_clock.pack(pady=(10, 5))
+
+        self.lbl_etapa = ttk.Label(frame_center, text="Sistema em *standby* (aguardando execução).", style="Status.TLabel")
+        self.lbl_etapa.pack(pady=(5, 20))
+
+        self.progress = ttk.Progressbar(frame_center, length=600, mode="determinate")
+        self.progress.pack(pady=10)
+
+        # --- BOTÃO DE AÇÃO MANUAL ---
+        self.btn = ttk.Button(frame_center, text="SINCRONIZAR AGORA", command=self.start_manual, width=25)
+        self.btn.pack(pady=20)
+
+        # --- TERMINAL DE LOG (DISCRETO) ---
+        frame_terminal = tk.Frame(root, bg="#FFFFFF", bd=1, relief="solid")
+        frame_terminal.pack(padx=40, pady=(0, 15), fill="x")
         
-        frame_filtros = tk.Frame(root, bg="#f4f6f9")
-        frame_filtros.pack(pady=10)
+        self.log_txt = tk.Text(frame_terminal, height=6, font=("Consolas", 9), bg="#FAFAFA", fg="#555555", bd=0, padx=10, pady=10)
+        self.log_txt.pack(fill="x")
 
-        ttk.Label(frame_filtros, text="Data Início:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
-        self.ent_ini = ttk.Entry(frame_filtros, width=15)
-        self.ent_ini.insert(0, datetime.now().strftime("%d/%m/%Y"))
-        self.ent_ini.grid(row=0, column=1, padx=5, pady=5)
-        
-        ttk.Label(frame_filtros, text="Data Fim:").grid(row=0, column=2, padx=5, pady=5, sticky="e")
-        self.ent_fim = ttk.Entry(frame_filtros, width=15)
-        self.ent_fim.insert(0, datetime.now().strftime("%d/%m/%Y"))
-        self.ent_fim.grid(row=0, column=3, padx=5, pady=5)
+        # --- RODAPÉ ---
+        tk.Label(root, text="Automação D&A | Janela de processamento contínuo: 7 dias corridos.", 
+                 font=("Segoe UI", 8), fg="#888888", bg="#F4F6F9").pack(side="bottom", pady=10)
 
-        ttk.Label(frame_filtros, text="Filtrar Assistente:").grid(row=1, column=0, padx=5, pady=15, sticky="e")
-        self.combo_assistente = ttk.Combobox(frame_filtros, values=LISTA_ASSISTENTES, state="readonly", width=30)
-        self.combo_assistente.current(0)
-        self.combo_assistente.grid(row=1, column=1, columnspan=3, padx=5, pady=15, sticky="w")
+        # Inicia o relógio
+        self.log("Sistema Iniciado. Monitoramento em background ativado.")
+        self.root.after(1000, self.tick_relogio)
 
-        self.btn = tk.Button(root, text="EXTRAIR DADOS", command=self.start, bg="#004a8d", fg="white", font=("Segoe UI", 11, "bold"), width=25, relief="flat")
-        self.btn.pack(pady=15)
-
-        self.progress = ttk.Progressbar(root, length=650, mode="determinate")
-        self.progress.pack(pady=5)
-
-        self.log_txt = tk.Text(root, height=12, width=85, font=("Consolas", 9), bg="#1e1e1e", fg="#4af626", relief="flat")
-        self.log_txt.pack(pady=15, padx=20)
-
+    # ================= LOG E FERRAMENTAS =================
     def log(self, msg):
         self.log_txt.insert(tk.END, f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
         self.log_txt.see(tk.END)
+        self.root.update_idletasks()
+
+    def extrair_placa(self, texto):
+        if not texto: return None
+        busca = re.search(r'[A-Za-z]{3}[-\s]?[0-9][A-Za-z0-9][0-9]{2}', texto)
+        return busca.group(0).replace("-", "").replace(" ", "").upper() if busca else None
 
     def remover_acentos(self, texto):
         if not texto: return ""
         return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8').lower()
 
-    def extrair_placa(self, texto):
-        if not texto: return None
-        busca = re.search(r'[A-Za-z]{3}[-\s]?[0-9][A-Za-z0-9][0-9]{2}', texto)
-        if busca:
-            return busca.group(0).replace("-", "").replace(" ", "").upper()
-        return None
-
     def ler_xml(self, caminho):
-        d = {"NF": "N/D", "Material": "N/D", "Vol": "0", "Emitente": "N/D", "CFOP": "N/D"}
+        d = {"nf": "N/D", "material": "N/D", "volume": "0", "qvol": "0", "emitente": "N/D", "cfop": "N/D", 
+             "cnpj_emitente": "N/D", "cnpj_destinatario": "N/D", "nome_destinatario": "N/D", "transportadora": "N/D"}
         try:
             with open(caminho, 'r', encoding='utf-8', errors='ignore') as f:
                 conteudo = f.read()
-
             conteudo_limpo = re.sub(r'(</?)[a-zA-Z0-9\-]+:', r'\1', conteudo)
 
             nf_m = re.search(r'<nNF>(\d+)</nNF>', conteudo_limpo)
-            if nf_m: d["NF"] = nf_m.group(1)
-
+            if nf_m: d["nf"] = nf_m.group(1)
             mat_m = re.search(r'<xProd>([^<]+)</xProd>', conteudo_limpo)
-            if mat_m: 
-                d["Material"] = mat_m.group(1).replace('&quot;', '"').replace('&amp;', '&').strip()
-
-            emit_m = re.search(r'<emit>.*?<xNome>([^<]+)</xNome>', conteudo_limpo, re.DOTALL)
-            if emit_m: 
-                d["Emitente"] = emit_m.group(1).replace('&quot;', '"').replace('&amp;', '&').strip()
-                
+            if mat_m: d["material"] = mat_m.group(1).replace('&quot;', '"').replace('&amp;', '&').strip()
             cfop_m = re.search(r'<CFOP>\s*([^<]+)\s*</CFOP>', conteudo_limpo, re.IGNORECASE)
-            if cfop_m:
-                d["CFOP"] = cfop_m.group(1).strip()
-
+            if cfop_m: d["cfop"] = cfop_m.group(1).strip()
             pesol_m = re.search(r'<pesoL>\s*([\d\.,]+)\s*</pesoL>', conteudo_limpo, re.IGNORECASE)
-            if pesol_m:
-                val = pesol_m.group(1).replace(',', '.') 
-                try:
-                    d["Vol"] = str(int(float(val)))
-                except ValueError:
-                    d["Vol"] = val.split('.')[0]
+            if pesol_m: d["volume"] = str(int(float(pesol_m.group(1).replace(',', '.'))))
+
+            emit_b = re.search(r'<emit>(.*?)</emit>', conteudo_limpo, re.S)
+            if emit_b:
+                d["cnpj_emitente"] = (re.search(r'<CNPJ>(\d+)', emit_b.group(1)) or re.search(r'', '')).group(0).replace('<CNPJ>', '').strip()
+                d["emitente"] = (re.search(r'<xNome>([^<]+)', emit_b.group(1)) or re.search(r'', '')).group(0).replace('<xNome>', '').strip()
+            dest_b = re.search(r'<dest>(.*?)</dest>', conteudo_limpo, re.S)
+            if dest_b:
+                d["nome_destinatario"] = (re.search(r'<xNome>([^<]+)', dest_b.group(1)) or re.search(r'', '')).group(0).replace('<xNome>', '').strip()
+                d["cnpj_destinatario"] = (re.search(r'<(?:CNPJ|CPF)>(\d+)', dest_b.group(1)) or re.search(r'', '')).group(0).replace('<CNPJ>', '').replace('<CPF>', '').strip()
+            transp_b = re.search(r'<transporta>(.*?)</transporta>', conteudo_limpo, re.S)
+            if transp_b:
+                d["transportadora"] = (re.search(r'<xNome>([^<]+)', transp_b.group(1)) or re.search(r'', '')).group(0).replace('<xNome>', '').strip()
+            return d
+        except Exception: return d
+
+    # ================= MOTOR DE AUTOMAÇÃO =================
+    def tick_relogio(self):
+        if self.auto_mode.get() and not self.is_running:
+            if self.tempo_restante <= 0:
+                self.log("Iniciando rotina automática de extração.")
+                self.start_processo()
             else:
-                qvol_m = re.search(r'<qVol>\s*([\d\.,]+)\s*</qVol>', conteudo_limpo, re.IGNORECASE)
-                if qvol_m:
-                    d["Vol"] = qvol_m.group(1).split('.')[0]
+                self.tempo_restante -= 1
+                mins, secs = divmod(self.tempo_restante, 60)
+                self.lbl_clock.config(text=f"{mins:02d}:{secs:02d}", foreground="#004B87")
+        self.root.after(1000, self.tick_relogio)
 
-            return d
-        except Exception as e:
-            return d
+    def start_manual(self):
+        if self.is_running: return
+        self.log("Execução manual solicitada pelo usuário.")
+        self.start_processo()
 
-    def ler_pdf_limpo(self, caminho):
-        d = {"NF": "N/D", "Material": "N/D", "Vol": "0", "Emitente": "N/D", "CFOP": "N/D"}
-        texto_completo = ""
-        try:
-            with pdfplumber.open(caminho) as pdf:
-                pagina = pdf.pages[0]
-                topo_area = pagina.within_bbox((0, 0, pagina.width, 200))
-                texto_topo = topo_area.extract_text() or ""
-                texto_completo = pagina.extract_text() or ""
-            
-            if len(texto_completo.strip()) < 50:
-                doc = fitz.open(caminho)
-                pix = doc[0].get_pixmap()
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                texto_topo = pytesseract.image_to_string(cv2.cvtColor(np.array(img), cv2.COLOR_BGR2GRAY), lang='por')
-                texto_completo = texto_topo
-
-            nf_m = re.search(r'(?:N[º°]|Nota Fiscal N[º°]?)\s*(\d+)', texto_completo, re.I)
-            if nf_m: d["NF"] = nf_m.group(1)
-            
-            cfop_pdf_m = re.search(r'(?:CFOP)\s*[:\.\-]?\s*(\d{4})', texto_completo, re.I)
-            if cfop_pdf_m: d["CFOP"] = cfop_pdf_m.group(1)
-
-            lixo = ["SÉRIE", "EMISSÃO", "VALOR", "TOTAL", "DANFE", "FOLHA", "CHAVE", "PROTOCOLO", "CNPJ", "INSCR", "FONE", "TEL", "UF", "DATA"]
-            linhas = [l.strip() for l in texto_topo.split('\n') if l.strip()]
-            for linha in linhas:
-                if len(linha) > 5 and not any(x in linha.upper() for x in lixo):
-                    if not re.match(r'^\d', linha):
-                        d["Emitente"] = linha[:60].strip()
-                        break
-
-            vol_m = re.search(r'(?:QUANTIDADE|QTD|VOLUMES)\s*(\d+)', texto_completo, re.I)
-            if vol_m: d["Vol"] = vol_m.group(1)
-            
-            mat_m = re.search(r'(?:DESCRIÇÃO DO PRODUTO)\s*\n.*?\d+\s+([^\n\r]+)', texto_completo, re.I)
-            if mat_m: d["Material"] = mat_m.group(1).strip()[:40]
-
-            return d
-        except: return d
-
-    def start(self):
+    def start_processo(self):
+        self.is_running = True
+        self.btn.config(state="disabled")
+        self.lbl_clock.config(text="PROCESSANDO", foreground="#0078D4")
         threading.Thread(target=self.run, daemon=True).start()
 
+    # ================= PROCESSO PRINCIPAL =================
     def run(self):
         pythoncom.CoInitialize()
-        self.btn.config(state="disabled")
-        assistente_escolhido = self.combo_assistente.get()
-        self.log(f"Iniciando rastreio v10.0 (SQLite Ativo). Filtro: {assistente_escolhido}")
+        self.lbl_etapa.config(text="Estabelecendo conexão com o Banco de Dados e Outlook...")
+        self.root.update_idletasks()
         
-        # --- INICIALIZAÇÃO DO BANCO DE DADOS SQLITE ---
         try:
-            conn = sqlite3.connect(BANCO_SQLITE)
-            cursor = conn.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS trocas (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    assunto TEXT,
-                    armazem TEXT,
-                    data_hora_solicitacao TEXT,
-                    nf_entrada TEXT,
-                    emitente TEXT,
-                    material TEXT,
-                    cfop TEXT,
-                    volume TEXT,
-                    status TEXT,
-                    data_hora_conclusao TEXT,
-                    assistente TEXT,
-                    nf_saida TEXT,
-                    observacoes TEXT
-                )
-            ''')
+            conn = sqlite3.connect(BANCO_SQLITE); cursor = conn.cursor()
+            
+            cursor.execute('''CREATE TABLE IF NOT EXISTS trocas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, assunto TEXT, armazem TEXT, data_hora_solicitacao TEXT, 
+                nf_entrada TEXT, emitente TEXT, material TEXT, cfop TEXT, volume TEXT, qvol TEXT, 
+                status TEXT, data_hora_conclusao TEXT, assistente TEXT, nf_saida TEXT, cnpj_emitente TEXT, 
+                cnpj_destinatario TEXT, justificativa TEXT, observacoes TEXT, nome_destinatario TEXT,
+                transportadora_saida TEXT, cfop_saida TEXT, padronizado_xml TEXT, entry_id TEXT)''')
             conn.commit()
-            self.log("Conexão com o Banco de Dados estabelecida.")
-        except Exception as e:
-            self.log(f"Erro ao conectar no banco: {e}")
-            messagebox.showerror("Erro de BD", f"Falha no Banco de Dados:\n{e}")
-            self.btn.config(state="normal")
-            return
 
-        try:
+            try: cursor.execute("ALTER TABLE trocas ADD COLUMN entry_id TEXT")
+            except sqlite3.OperationalError: pass
+
             outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
             inbox = outlook.GetDefaultFolder(6)
             try: pasta = inbox.Folders("Troca de Notas")
             except: pasta = inbox.Parent.Folders("Troca de Notas")
 
-            filtro = f"[ReceivedTime] >= '{self.ent_ini.get()} 00:00' AND [ReceivedTime] <= '{self.ent_fim.get()} 23:59'"
+            # --- A JANELA DESLIZANTE DE 7 DIAS ---
+            hoje = datetime.now()
+            sete_dias_atras = hoje - timedelta(days=7)
+            data_fim_str = hoje.strftime('%d/%m/%Y')
+            data_ini_str = sete_dias_atras.strftime('%d/%m/%Y')
+            
+            self.log(f"Processando registros no período de {data_ini_str} a {data_fim_str}.")
+            filtro = f"[ReceivedTime] >= '{data_ini_str} 00:00' AND [ReceivedTime] <= '{data_fim_str} 23:59'"
+            
             mensagens = pasta.Items.Restrict(filtro)
-            mensagens.Sort("[ReceivedTime]", False) 
-            total = mensagens.Count
+            mensagens.Sort("[ReceivedTime]", False)
             
-            fluxo = {}
-            
-            palavras_cancelamento = ["cancelamento", "cancelar", "desconsiderar", "cancela"]
-            separadores_historico = ["\r\nde: ", "\nde: ", "\r\nfrom: ", "\nfrom: ", "________________________________", "-----mensagem original-----", "\nem ", "\r\nem "]
+            total_msgs = mensagens.Count
+            transacoes_ativas = []
 
             for i, msg in enumerate(mensagens):
-                self.progress['value'] = ((i + 1) / total) * 100
+                percent = int(((i + 1) / total_msgs) * 100) if total_msgs > 0 else 100
+                self.progress['value'] = percent
+                self.lbl_etapa.config(text=f"Lendo base de e-mails ({i+1}/{total_msgs}) - {percent}%")
+                self.root.update_idletasks()
+
                 cid = msg.ConversationID
-                
                 email = ""
                 try: email = msg.SenderEmailAddress.lower() if msg.Sender.Type != "EX" else msg.Sender.GetExchangeUser().PrimarySmtpAddress.lower()
                 except: pass
-
-                corpo_cru = ""
-                try: corpo_cru = msg.Body.lower()
-                except: pass
-
-                for sep in separadores_historico:
-                    if sep in corpo_cru:
-                        corpo_cru = corpo_cru.split(sep)[0]
                 
-                corpo_limpo = self.remover_acentos(corpo_cru)
+                nome_rem = self.remover_acentos(msg.SenderName)
+                eh_assistente = "mosaicco.com" in email or any(self.remover_acentos(ast) in nome_rem for ast in LISTA_ASSISTENTES[1:])
                 
-                assunto_cru = ""
-                try: assunto_cru = msg.Subject
-                except: pass
-                
-                texto_busca = assunto_cru + " " + corpo_limpo
-                placa_email = self.extrair_placa(texto_busca)
-
-                if cid not in fluxo: 
-                    fluxo[cid] = []
-
-                ultima_transacao = fluxo[cid][-1] if fluxo[cid] else None
-                eh_assistente = "mosaicco.com" in email
-
-                nomes_anexos = []
                 anexo_alvo = None
+                tem_xml = False
+                
                 if msg.Attachments.Count > 0:
                     for j in range(1, msg.Attachments.Count + 1):
-                        a = msg.Attachments.Item(j)
-                        nome_arq = a.FileName.lower()
-                        nomes_anexos.append(nome_arq)
-                        if nome_arq.endswith(".xml") and not anexo_alvo: 
-                            anexo_alvo = a
+                        at = msg.Attachments.Item(j)
+                        if at.FileName.lower().endswith(".xml"): 
+                            anexo_alvo = at
+                            tem_xml = True
+                            break
                     if not anexo_alvo:
                         for j in range(1, msg.Attachments.Count + 1):
-                            a = msg.Attachments.Item(j)
-                            if a.FileName.lower().endswith(".pdf"): 
-                                anexo_alvo = a; break
+                            at = msg.Attachments.Item(j)
+                            if at.FileName.lower().endswith(".pdf"): 
+                                anexo_alvo = at
+                                break
 
-                if eh_assistente:
-                    if anexo_alvo and ultima_transacao and ultima_transacao['concl'] is None and not ultima_transacao['cancelado']: 
-                        path = os.path.join(PASTA_ANEXOS, anexo_alvo.FileName)
-                        anexo_alvo.SaveAsFile(path)
-                        dados = self.ler_xml(path) if path.lower().endswith(".xml") else self.ler_pdf_limpo(path)
-                        ultima_transacao['concl'] = {
-                            'DataHora': msg.SentOn.strftime("%d/%m/%Y %H:%M:%S"), 
-                            'Assistente': msg.SenderName,
-                            'NF': dados['NF'],
-                            'Vol_Saida': dados['Vol'],
-                            'CFOP_Saida': dados['CFOP']
-                        }
-                    elif anexo_alvo:
-                        achou_link = False
-                        for cid_buscado, lista_t in fluxo.items():
-                            for t in lista_t:
-                                if t['concl'] is None and not t['cancelado']:
-                                    bateu_placa = (placa_email is not None and t['placa_solic'] is not None and placa_email == t['placa_solic'])
-                                    bateu_anexo = False
-                                    for arq in nomes_anexos:
-                                        if arq in t['anexos_iniciais'] and len(arq) > 10 and not arq.startswith("image"):
-                                            bateu_anexo = True
-                                            break
-                                    if bateu_placa or bateu_anexo:
-                                        path = os.path.join(PASTA_ANEXOS, anexo_alvo.FileName)
-                                        anexo_alvo.SaveAsFile(path)
-                                        dados = self.ler_xml(path) if path.lower().endswith(".xml") else self.ler_pdf_limpo(path)
-                                        t['concl'] = {
-                                            'DataHora': msg.SentOn.strftime("%d/%m/%Y %H:%M:%S"),
-                                            'Assistente': msg.SenderName,
-                                            'NF': dados['NF'],
-                                            'Vol_Saida': dados['Vol'],
-                                            'CFOP_Saida': dados['CFOP']
-                                        }
-                                        motivo = "Placa Encontrada" if bateu_placa else "Anexo Específico Idêntico"
-                                        t['obs'].add(f"Vinculado via Radar Global ({motivo})")
-                                        achou_link = True
-                                        break
-                            if achou_link: break
-                else:
-                    eh_cancelamento = any(p in corpo_limpo for p in palavras_cancelamento)
-
+                if not eh_assistente:
                     if anexo_alvo:
-                        path = os.path.join(PASTA_ANEXOS, anexo_alvo.FileName)
+                        nome_arq_unico = f"{msg.EntryID[:15]}_{anexo_alvo.FileName}"
+                        path = os.path.join(PASTA_ANEXOS, nome_arq_unico)
                         anexo_alvo.SaveAsFile(path)
-                        dados = self.ler_xml(path) if path.lower().endswith(".xml") else self.ler_pdf_limpo(path)
+                        dados = self.ler_xml(path)
 
-                        nova_transacao = {
+                        transacoes_ativas.append({
+                            'cid': cid,
+                            'placa': self.extrair_placa(msg.Subject + " " + (msg.Body or "")),
+                            'data_solic_dt': msg.SentOn,
                             'solic': {
-                                'DataHora': msg.SentOn.strftime("%d/%m/%Y %H:%M:%S"), 
-                                'Armazem': msg.SenderName,
-                                'NF': dados['NF'], 'Material': dados['Material'], 
-                                'Vol': dados['Vol'], 'Emitente': dados['Emitente'], 'Assunto': msg.Subject,
-                                'CFOP': dados['CFOP']
-                            },
-                            'concl': None,
-                            'cancelado': False,
-                            'obs': set(),
-                            'anexos_iniciais': nomes_anexos,
-                            'placa_solic': placa_email 
+                                'entry_id': msg.EntryID,
+                                'assunto': msg.Subject, 'armazem': msg.SenderName, 'data': msg.SentOn.strftime("%d/%m/%Y %H:%M:%S"), 
+                                'nf': dados['nf'], 'mat': dados['material'], 'vol': dados['volume'], 'qvol': dados['qvol'], 
+                                'emit': dados['emitente'], 'cfop': dados['cfop'], 'cnpj_e': dados['cnpj_emitente'], 
+                                'cnpj_d': dados['cnpj_destinatario'], 'nome_d': dados['nome_destinatario'],
+                                'tem_xml': tem_xml
+                            }, 
+                            'concl': None
+                        })
+                else:
+                    target = None
+                    placa_resp = self.extrair_placa(msg.Subject + " " + (msg.Body or ""))
+                    
+                    for t in reversed(transacoes_ativas):
+                        if t['cid'] == cid and t['data_solic_dt'] <= msg.SentOn:
+                            target = t; break
+                            
+                    if not target and placa_resp:
+                        for t in reversed(transacoes_ativas):
+                            if t['placa'] == placa_resp and t['data_solic_dt'] <= msg.SentOn:
+                                target = t; break
+                    
+                    if target and (anexo_alvo or target['solic']['tem_xml']):
+                        corpo = msg.Body or ""
+                        match_just = re.search(r'(?:justificativa|motivo)s?[\s\-\:]*(.*)', corpo, re.IGNORECASE | re.DOTALL)
+                        if match_just:
+                            linhas_texto = [linha.strip() for linha in match_just.group(1).split('\n') if linha.strip()]
+                            texto_just = linhas_texto[0][:150] if linhas_texto else "-"
+                        else:
+                            texto_just = "-"
+
+                        if anexo_alvo:
+                            nome_arq_unico = f"{msg.EntryID[:15]}_{anexo_alvo.FileName}"
+                            path = os.path.join(PASTA_ANEXOS, nome_arq_unico)
+                            anexo_alvo.SaveAsFile(path)
+                            dados_saida = self.ler_xml(path)
+                        else:
+                            dados_saida = {"nf": "N/D", "cnpj_destinatario": "N/D", "nome_destinatario": "N/D", "transportadora": "N/D", "cfop": "N/D"}
+
+                        target['concl'] = {
+                            'data': msg.SentOn.strftime("%d/%m/%Y %H:%M:%S"), 'assistente': msg.SenderName, 
+                            'nf': dados_saida['nf'], 'just': texto_just, 'cnpj_d_sai': dados_saida['cnpj_destinatario'],
+                            'nome_d_sai': dados_saida['nome_destinatario'], 'transp_sai': dados_saida['transportadora'], 'cfop_sai': dados_saida['cfop'],
+                            'tem_xml': tem_xml
                         }
-                        fluxo[cid].append(nova_transacao)
 
-                    elif eh_cancelamento and ultima_transacao and ultima_transacao['concl'] is None:
-                        ultima_transacao['cancelado'] = True
+            self.lbl_etapa.config(text="Sincronizando registros no Banco de Dados...")
+            self.root.update_idletasks()
 
-            # --- GRAVAÇÃO NO SQLITE (UPSERT NATIVO) ---
-            novos_registros = 0
-            atualizados = 0
+            for t in transacoes_ativas:
+                s = t['solic']; c = t['concl']
+                cnpj_d = c['cnpj_d_sai'] if (c and c['cnpj_d_sai'] != "N/D") else s['cnpj_d']
+                nome_d = c['nome_d_sai'] if (c and c['nome_d_sai'] != "N/D") else s['nome_d']
+                
+                if not c: padrao = "SIM" if s['tem_xml'] else "NÃO (Armazém)"
+                else:
+                    if s['tem_xml'] and c['tem_xml']: padrao = "SIM"
+                    elif not s['tem_xml'] and not c['tem_xml']: padrao = "NÃO (Ambos)"
+                    elif not s['tem_xml']: padrao = "NÃO (Armazém)"
+                    else: padrao = "NÃO (Assistente)"
 
-            for cid, lista_transacoes in fluxo.items():
-                for f in lista_transacoes:
-                    s = f['solic']
-                    c = f['concl']
-                    nome_conclusao = c['Assistente'] if c else "-"
-                    
-                    if assistente_escolhido != "Todos os Assistentes":
-                        primeiro_nome = self.remover_acentos(assistente_escolhido.split()[0])
-                        nome_conclusao_limpo = self.remover_acentos(nome_conclusao)
-                        if not c or primeiro_nome not in nome_conclusao_limpo: continue
+                cursor.execute("SELECT id, status FROM trocas WHERE entry_id = ?", (s['entry_id'],))
+                row = cursor.fetchone()
 
-                    status_final = "PENDENTE"
-                    if f['cancelado']: status_final = "CANCELADO"
-                    elif c: status_final = "CONCLUÍDO"
-
-                    observacoes = " | ".join(f['obs']) if f['obs'] else "-"
-                    if f['cancelado']: observacoes = "Cancelamento identificado no e-mail isolado."
-
-                    vol_saida = c['Vol_Saida'] if c else "0"
-                    vol_solic = s['Vol'] if s else "0"
-                    volume_final = vol_saida if vol_saida != "0" else vol_solic
-                    
-                    cfop_saida = c['CFOP_Saida'] if c else "N/D"
-                    cfop_solic = s['CFOP'] if s else "N/D"
-                    cfop_final = cfop_saida if cfop_saida != "N/D" else cfop_solic
-
-                    # Variáveis para o banco
-                    assunto = s['Assunto']
-                    armazem = s['Armazem']
-                    dh_solic = s['DataHora']
-                    nf_ent = s['NF']
-                    emit = s['Emitente']
-                    mat = s['Material']
-                    dh_concl = c['DataHora'] if c else "-"
-                    nf_sai = c['NF'] if c else "-"
-
-                    # Checa se a nota já existe cruzando Data + Assunto + NF (Impede duplicar 'N/D')
-                    cursor.execute('''
-                        SELECT id, status FROM trocas
-                        WHERE data_hora_solicitacao = ? AND assunto = ? AND nf_entrada = ?
-                    ''', (dh_solic, assunto, nf_ent))
-                    linha_banco = cursor.fetchone()
-
-                    if linha_banco:
-                        row_id, row_status = linha_banco
-                        # Se estava pendente no banco e agora foi concluída, faz o UPDATE
-                        if row_status == 'PENDENTE' and status_final == 'CONCLUÍDO':
-                            cursor.execute('''
-                                UPDATE trocas
-                                SET status = ?, data_hora_conclusao = ?, assistente = ?, nf_saida = ?, cfop = ?, volume = ?, observacoes = ?
-                                WHERE id = ?
-                            ''', (status_final, dh_concl, nome_conclusao, nf_sai, cfop_final, volume_final, observacoes, row_id))
-                            atualizados += 1
-                    else:
-                        # Se não existir, faz o INSERT (Inserção nova)
-                        cursor.execute('''
-                            INSERT INTO trocas (
-                                assunto, armazem, data_hora_solicitacao, nf_entrada, emitente,
-                                material, cfop, volume, status, data_hora_conclusao, assistente,
-                                nf_saida, observacoes
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (assunto, armazem, dh_solic, nf_ent, emit, mat, cfop_final, volume_final, status_final, dh_concl, nome_conclusao, nf_sai, observacoes))
-                        novos_registros += 1
+                if row:
+                    db_id, db_status = row
+                    if db_status == "PENDENTE" and c:
+                        cursor.execute('''UPDATE trocas SET 
+                                          status="CONCLUÍDO", data_hora_conclusao=?, assistente=?, nf_saida=?, 
+                                          cnpj_destinatario=?, justificativa=?, nome_destinatario=?, 
+                                          transportadora_saida=?, cfop_saida=?, padronizado_xml=? 
+                                          WHERE id=?''',
+                                       (c['data'], c['assistente'], c['nf'], cnpj_d, c['just'], nome_d, 
+                                        c['transp_sai'] if c else "N/D", c['cfop_sai'] if c else "N/D", padrao, db_id))
+                else:
+                    cursor.execute('''INSERT INTO trocas (assunto, armazem, data_hora_solicitacao, nf_entrada, emitente, material, cfop, volume, qvol, status, data_hora_conclusao, assistente, nf_saida, cnpj_emitente, cnpj_destinatario, justificativa, nome_destinatario, transportadora_saida, cfop_saida, padronizado_xml, entry_id) 
+                                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                                   (s['assunto'], s['armazem'], s['data'], s['nf'], s['emit'], s['mat'], s['cfop'], s['vol'], s['qvol'], "CONCLUÍDO" if c else "PENDENTE", c['data'] if c else "-", c['assistente'] if c else "-", c['nf'] if c else "-", s['cnpj_e'], cnpj_d, c['just'] if c else "-", nome_d, c['transp_sai'] if c else "N/D", c['cfop_sai'] if c else "N/D", padrao, s['entry_id']))
 
             conn.commit()
 
-            # --- GERA O ESPELHO EM EXCEL PARA VISUALIZAÇÃO ---
-            df_export = pd.read_sql_query("SELECT * FROM trocas", conn)
-            
-            if not df_export.empty:
-                # Remove a coluna de ID do banco para o Excel ficar limpo
-                df_export.drop(columns=['id'], inplace=True, errors='ignore')
-                
-                # Renomeia as colunas para o formato antigo amigável
-                df_export.columns = [
-                    "Assunto", "Armazém", "Data/Hora Solicitação", "NF Entrada",
-                    "Emitente (Topo da Nota)", "Material", "CFOP", "Volume (Peso Líquido)",
-                    "Status", "Data/Hora Conclusão", "Assistente", "NF Saída (Nova)", "Observações"
-                ]
-                
-                # Tratamento final do caractere '&'
-                if 'Emitente (Topo da Nota)' in df_export.columns:
-                    df_export['Emitente (Topo da Nota)'] = df_export['Emitente (Topo da Nota)'].astype(str).str.replace('&amp;', '&', regex=False)
-                
-                df_export.to_excel(ARQUIVO_FINAL, index=False)
-                messagebox.showinfo("Sucesso SQLite", f"Banco de Dados atualizado!\nNovos registros: {novos_registros}\nPendentes concluídos: {atualizados}\n\nEspelho Excel atualizado com sucesso.")
-                os.startfile(os.path.dirname(ARQUIVO_FINAL))
-            else:
-                messagebox.showwarning("Aviso", "O Banco de Dados está vazio. Nenhum processo encontrado.")
+            self.lbl_etapa.config(text="Atualizando base de dados Excel...")
+            self.root.update_idletasks()
 
-        except Exception as e: messagebox.showerror("Erro Crítico", str(e))
+            df = pd.read_sql_query("SELECT * FROM trocas", conn)
+            df.drop(columns=['id', 'entry_id'], inplace=True, errors='ignore')
+            df.to_excel(ARQUIVO_FINAL, index=False)
+            
+            self.lbl_etapa.config(text="Rotina concluída com sucesso.", foreground="#0078D4")
+            self.log("Processo finalizado. Arquivo Excel atualizado.")
+            
+        except Exception as e: 
+            self.lbl_etapa.config(text="Falha durante a execução.", foreground="#D13438")
+            self.log(f"ERRO DE SISTEMA: {str(e)}")
         finally:
             if 'conn' in locals(): conn.close()
             pythoncom.CoUninitialize()
+            self.is_running = False
+            
+            self.tempo_restante = self.intervalo_min.get() * 60
             self.btn.config(state="normal")
+            self.progress['value'] = 0
 
 if __name__ == "__main__":
-    root = tk.Tk(); AppMosaicMaster(root); root.mainloop()
+    root = tk.Tk()
+    AppMosaicMaster(root)
+    root.mainloop()
