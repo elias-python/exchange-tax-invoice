@@ -98,6 +98,7 @@ class AppMosaicMaster:
         if not texto: return ""
         return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8').lower()
 
+    # ================= LEITURA XML COM VALIDAÇÃO DA TAG <esp> =================
     def ler_xml(self, caminho):
         d = {"nf": "N/D", "material": "N/D", "volume": "0", "qvol": "0", "emitente": "N/D", "cfop": "N/D", 
              "cnpj_emitente": "N/D", "cnpj_destinatario": "N/D", "nome_destinatario": "N/D", "transportadora": "N/D"}
@@ -106,26 +107,58 @@ class AppMosaicMaster:
                 conteudo = f.read()
             conteudo_limpo = re.sub(r'(</?)[a-zA-Z0-9\-]+:', r'\1', conteudo)
 
-            nf_m = re.search(r'<nNF>(\d+)</nNF>', conteudo_limpo)
-            if nf_m: d["nf"] = nf_m.group(1)
-            mat_m = re.search(r'<xProd>([^<]+)</xProd>', conteudo_limpo)
-            if mat_m: d["material"] = mat_m.group(1).replace('&quot;', '"').replace('&amp;', '&').strip()
-            cfop_m = re.search(r'<CFOP>\s*([^<]+)\s*</CFOP>', conteudo_limpo, re.IGNORECASE)
-            if cfop_m: d["cfop"] = cfop_m.group(1).strip()
-            pesol_m = re.search(r'<pesoL>\s*([\d\.,]+)\s*</pesoL>', conteudo_limpo, re.IGNORECASE)
-            if pesol_m: d["volume"] = str(int(float(pesol_m.group(1).replace(',', '.'))))
+            def get_tag(tag, txt):
+                m = re.search(fr'<{tag}>([^<]+)</{tag}>', txt, re.I)
+                return m.group(1).strip() if m else "N/D"
 
-            emit_b = re.search(r'<emit>(.*?)</emit>', conteudo_limpo, re.S)
-            if emit_b:
-                d["cnpj_emitente"] = (re.search(r'<CNPJ>(\d+)', emit_b.group(1)) or re.search(r'', '')).group(0).replace('<CNPJ>', '').strip()
-                d["emitente"] = (re.search(r'<xNome>([^<]+)', emit_b.group(1)) or re.search(r'', '')).group(0).replace('<xNome>', '').strip()
-            dest_b = re.search(r'<dest>(.*?)</dest>', conteudo_limpo, re.S)
-            if dest_b:
-                d["nome_destinatario"] = (re.search(r'<xNome>([^<]+)', dest_b.group(1)) or re.search(r'', '')).group(0).replace('<xNome>', '').strip()
-                d["cnpj_destinatario"] = (re.search(r'<(?:CNPJ|CPF)>(\d+)', dest_b.group(1)) or re.search(r'', '')).group(0).replace('<CNPJ>', '').replace('<CPF>', '').strip()
-            transp_b = re.search(r'<transporta>(.*?)</transporta>', conteudo_limpo, re.S)
-            if transp_b:
-                d["transportadora"] = (re.search(r'<xNome>([^<]+)', transp_b.group(1)) or re.search(r'', '')).group(0).replace('<xNome>', '').strip()
+            def limpar_num(tag, txt):
+                m = re.search(fr'<{tag}>\s*([\d\.,]+)\s*</{tag}>', txt, re.I)
+                if not m: return 0
+                val = m.group(1).replace(',', '.')
+                if val.count('.') > 1: val = val.replace('.', '', val.count('.') - 1)
+                return int(float(val))
+
+            # Dados Básicos
+            d["nf"] = get_tag("nNF", conteudo_limpo)
+            d["material"] = get_tag("xProd", conteudo_limpo)
+            d["cfop"] = get_tag("CFOP", conteudo_limpo)
+            d["emitente"] = get_tag("xNome", conteudo_limpo)
+            
+            cnpjs = re.findall(r'<CNPJ>(\d+)</CNPJ>', conteudo_limpo)
+            if len(cnpjs) >= 1: d["cnpj_emitente"] = cnpjs[0]
+            if len(cnpjs) >= 2: d["cnpj_destinatario"] = cnpjs[1]
+            
+            dest_match = re.search(r'<dest>.*<xNome>([^<]+)</xNome>', conteudo_limpo, re.S)
+            if dest_match: d["nome_destinatario"] = dest_match.group(1)
+
+            transp_match = re.search(r'<transporta>.*<xNome>([^<]+)</xNome>', conteudo_limpo, re.S)
+            if transp_match: d["transportadora"] = transp_match.group(1)
+
+            # --- NOVA INTELIGÊNCIA: CAPTURA DA ESPÉCIE (<esp>) ---
+            esp_match = re.search(r'<esp>([^<]+)</esp>', conteudo_limpo, re.IGNORECASE)
+            esp_text = esp_match.group(1).upper() if esp_match else ""
+
+            peso_l = limpar_num('pesoL', conteudo_limpo)
+            q_vol = limpar_num('qVol', conteudo_limpo)
+            q_com = limpar_num('qCom', conteudo_limpo)
+            
+            d["qvol"] = str(q_vol) # Garante que a variável qvol não fique vazia
+            
+            mat_up = d["material"].upper()
+            palavras_emb = ["EMBALAGEM", "EMB", "BIG BAG", "BAG", "SACARIA", "SACO", "PALETE"]
+            
+            # Verifica se as palavras-chave estão no Material OU na tag Espécie
+            is_emb = any(p in mat_up for p in palavras_emb) or any(p in esp_text for p in palavras_emb)
+
+            if is_emb:
+                # É Embalagem: PRIORIDADE TOTAL para qVol ou qCom.
+                if q_vol > 0: d["volume"] = str(q_vol)
+                elif q_com > 0: d["volume"] = str(q_com)
+                else: d["volume"] = str(peso_l) # Fallback extremo
+            else:
+                # É Granel: PRIORIDADE TOTAL para pesoL.
+                d["volume"] = str(peso_l if peso_l > 0 else q_com)
+
             return d
         except Exception: return d
 
