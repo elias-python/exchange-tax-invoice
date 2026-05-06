@@ -22,8 +22,8 @@ class AppMosaicMaster:
     def __init__(self, root):
         self.root = root
         self.root.title("Monitor de Trocas - The Mosaic Company")
-        self.root.geometry("800x650")
-        self.root.configure(bg="#F4F6F9") # Fundo cinza claro corporativo
+        self.root.geometry("800x670")
+        self.root.configure(bg="#F4F6F9")
         
         self.is_running = False
         self.auto_mode = tk.BooleanVar(value=True)
@@ -37,7 +37,6 @@ class AppMosaicMaster:
         style.configure("Title.TLabel", font=("Segoe UI", 18, "bold"), foreground="#FFFFFF", background="#004B87")
         style.configure("Subtitle.TLabel", font=("Segoe UI", 10), foreground="#CCE0FF", background="#004B87")
         
-        # Painel Central Branco
         style.configure("Card.TFrame", background="#FFFFFF", relief="flat")
         style.configure("Clock.TLabel", font=("Segoe UI Light", 36), foreground="#004B87", background="#FFFFFF")
         style.configure("Status.TLabel", font=("Segoe UI", 11), foreground="#333333", background="#FFFFFF")
@@ -53,33 +52,47 @@ class AppMosaicMaster:
 
         # --- PAINEL CENTRAL (CARD) ---
         frame_center = ttk.Frame(root, style="Card.TFrame", padding=30)
-        frame_center.pack(pady=30, padx=40, fill="both", expand=True)
+        frame_center.pack(pady=20, padx=40, fill="both", expand=True)
 
         self.lbl_clock = ttk.Label(frame_center, text="15:00", style="Clock.TLabel")
-        self.lbl_clock.pack(pady=(10, 5))
+        self.lbl_clock.pack(pady=(5, 2))
+
+        # --- SELEÇÃO DE DIAS ---
+        frame_dias = tk.Frame(frame_center, bg="#FFFFFF")
+        frame_dias.pack(pady=(2, 10))
+        
+        lbl_dias = tk.Label(frame_dias, text="Analisar e-mails dos últimos:", font=("Segoe UI", 9, "bold"), fg="#555555", bg="#FFFFFF")
+        lbl_dias.pack(side="left", padx=5)
+        
+        self.janela_dias = tk.IntVar(value=7)
+        self.cb_dias = ttk.Combobox(frame_dias, textvariable=self.janela_dias, values=[1, 3, 7, 15, 30, 60, 90], width=5, state="readonly")
+        self.cb_dias.pack(side="left", padx=5)
+        
+        lbl_dias_sufixo = tk.Label(frame_dias, text="dias corridos.", font=("Segoe UI", 9), fg="#555555", bg="#FFFFFF")
+        lbl_dias_sufixo.pack(side="left")
 
         self.lbl_etapa = ttk.Label(frame_center, text="Sistema em *standby* (aguardando execução).", style="Status.TLabel")
-        self.lbl_etapa.pack(pady=(5, 20))
+        self.lbl_etapa.pack(pady=(5, 15))
 
         self.progress = ttk.Progressbar(frame_center, length=600, mode="determinate")
         self.progress.pack(pady=10)
 
         # --- BOTÃO DE AÇÃO MANUAL ---
         self.btn = ttk.Button(frame_center, text="SINCRONIZAR AGORA", command=self.start_manual, width=25)
-        self.btn.pack(pady=20)
+        self.btn.pack(pady=15)
 
-        # --- TERMINAL DE LOG (DISCRETO) ---
+        # --- TERMINAL DE LOG ---
         frame_terminal = tk.Frame(root, bg="#FFFFFF", bd=1, relief="solid")
-        frame_terminal.pack(padx=40, pady=(0, 15), fill="x")
+        frame_terminal.pack(padx=40, pady=(0, 10), fill="x")
         
-        self.log_txt = tk.Text(frame_terminal, height=6, font=("Consolas", 9), bg="#FAFAFA", fg="#555555", bd=0, padx=10, pady=10)
+        self.log_txt = tk.Text(frame_terminal, height=5, font=("Consolas", 9), bg="#FAFAFA", fg="#555555", bd=0, padx=10, pady=10)
         self.log_txt.pack(fill="x")
 
         # --- RODAPÉ ---
-        tk.Label(root, text="Automação D&A | Janela de processamento contínuo: 7 dias corridos.", 
-                 font=("Segoe UI", 8), fg="#888888", bg="#F4F6F9").pack(side="bottom", pady=10)
+        self.lbl_rodape = tk.Label(root, text="Automação D&A | Janela de processamento contínuo ajustável.", 
+                 font=("Segoe UI", 8), fg="#888888", bg="#F4F6F9")
+        self.lbl_rodape.pack(side="bottom", pady=5)
 
-        # Inicia o relógio
         self.log("Sistema Iniciado. Monitoramento em background ativado.")
         self.root.after(1000, self.tick_relogio)
 
@@ -98,7 +111,7 @@ class AppMosaicMaster:
         if not texto: return ""
         return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8').lower()
 
-    # ================= LEITURA XML AJUSTADA (CATEGORIZAÇÃO DE EMBALAGEM) =================
+    # ================= LEITURA XML AJUSTADA =================
     def ler_xml(self, caminho):
         d = {"nf": "N/D", "material": "N/D", "volume": "0", "qvol": "0", "emitente": "N/D", "cfop": "N/D", 
              "cnpj_emitente": "N/D", "cnpj_destinatario": "N/D", "nome_destinatario": "N/D", "transportadora": "N/D"}
@@ -107,7 +120,6 @@ class AppMosaicMaster:
                 conteudo = f.read()
             conteudo_limpo = re.sub(r'(</?)[a-zA-Z0-9\-]+:', r'\1', conteudo)
 
-            # Informações básicas
             nf_m = re.search(r'<nNF>(\d+)</nNF>', conteudo_limpo)
             if nf_m: d["nf"] = nf_m.group(1)
             mat_m = re.search(r'<xProd>([^<]+)</xProd>', conteudo_limpo)
@@ -115,16 +127,14 @@ class AppMosaicMaster:
             cfop_m = re.search(r'<CFOP>\s*([^<]+)\s*</CFOP>', conteudo_limpo, re.IGNORECASE)
             if cfop_m: d["cfop"] = cfop_m.group(1).strip()
             
-            # 1. Extração do Peso Líquido (pesoL)
             pesol_m = re.search(r'<pesoL>\s*([\d\.,]+)\s*</pesoL>', conteudo_limpo, re.IGNORECASE)
             pesol_val = 0
             if pesol_m: 
                 val_p = pesol_m.group(1).replace(',', '.')
                 if val_p.count('.') > 1: val_p = val_p.replace('.', '', val_p.count('.') - 1)
                 pesol_val = int(float(val_p))
-                d["volume"] = str(pesol_val) # Volume padrão assume o Peso Líquido
+                d["volume"] = str(pesol_val) 
 
-            # 2. Extração da Quantidade de Volumes (qVol)
             qvol_m = re.search(r'<qVol>\s*([\d\.,]+)\s*</qVol>', conteudo_limpo, re.IGNORECASE)
             qvol_val = 0
             if qvol_m:
@@ -133,7 +143,6 @@ class AppMosaicMaster:
                 qvol_val = int(float(val_q))
                 d["qvol"] = str(qvol_val)
 
-            # Isolamento dos blocos estruturais (Emitente, Destinatário, Transportadora)
             emit_b = re.search(r'<emit>(.*?)</emit>', conteudo_limpo, re.S)
             if emit_b:
                 d["cnpj_emitente"] = (re.search(r'<CNPJ>(\d+)', emit_b.group(1)) or re.search(r'', '')).group(0).replace('<CNPJ>', '').strip()
@@ -148,11 +157,9 @@ class AppMosaicMaster:
             if transp_b:
                 d["transportadora"] = (re.search(r'<xNome>([^<]+)', transp_b.group(1)) or re.search(r'', '')).group(0).replace('<xNome>', '').strip()
 
-            # 3. Categorização de EMBALAGEM através da tag <esp>
             esp_m = re.search(r'<esp>([^<]+)</esp>', conteudo_limpo, re.IGNORECASE)
             esp_text = esp_m.group(1).upper() if esp_m else ""
 
-            # Se constar "EMBALAGEM" na espécie, d["volume"] recebe a quantidade de volumes (qVol)
             if "EMBALAGEM" in esp_text:
                 if qvol_val > 0:
                     d["volume"] = str(qvol_val)
@@ -181,6 +188,9 @@ class AppMosaicMaster:
         self.is_running = True
         self.btn.config(state="disabled")
         self.lbl_clock.config(text="PROCESSANDO", foreground="#0078D4")
+        
+        self.dias_para_busca = self.janela_dias.get()
+        
         threading.Thread(target=self.run, daemon=True).start()
 
     # ================= PROCESSO PRINCIPAL =================
@@ -208,13 +218,12 @@ class AppMosaicMaster:
             try: pasta = inbox.Folders("Troca de Notas")
             except: pasta = inbox.Parent.Folders("Troca de Notas")
 
-            # --- A JANELA DESLIZANTE DE 7 DIAS ---
             hoje = datetime.now()
-            sete_dias_atras = hoje - timedelta(days=7)
+            sete_dias_atras = hoje - timedelta(days=self.dias_para_busca)
             data_fim_str = hoje.strftime('%d/%m/%Y')
             data_ini_str = sete_dias_atras.strftime('%d/%m/%Y')
             
-            self.log(f"Processando registros no período de {data_ini_str} a {data_fim_str}.")
+            self.log(f"Processando registros no período de {data_ini_str} a {data_fim_str} ({self.dias_para_busca} dias).")
             filtro = f"[ReceivedTime] >= '{data_ini_str} 00:00' AND [ReceivedTime] <= '{data_fim_str} 23:59'"
             
             mensagens = pasta.Items.Restrict(filtro)
@@ -332,14 +341,27 @@ class AppMosaicMaster:
 
                 if row:
                     db_id, db_status = row
-                    if db_status == "PENDENTE" and c:
+                    
+                    # --- NOVA LÓGICA DE ATUALIZAÇÃO (SOBREPOSIÇÃO) ---
+                    if c:
+                        # Se encontrou a conclusão agora, atualiza os dados do XML e os dados da conclusão
                         cursor.execute('''UPDATE trocas SET 
+                                          assunto=?, armazem=?, data_hora_solicitacao=?, nf_entrada=?, emitente=?, material=?, cfop=?, volume=?, qvol=?,
                                           status="CONCLUÍDO", data_hora_conclusao=?, assistente=?, nf_saida=?, 
-                                          cnpj_destinatario=?, justificativa=?, nome_destinatario=?, 
+                                          cnpj_emitente=?, cnpj_destinatario=?, justificativa=?, nome_destinatario=?, 
                                           transportadora_saida=?, cfop_saida=?, padronizado_xml=? 
                                           WHERE id=?''',
-                                       (c['data'], c['assistente'], c['nf'], cnpj_d, c['just'], nome_d, 
+                                       (s['assunto'], s['armazem'], s['data'], s['nf'], s['emit'], s['mat'], s['cfop'], s['vol'], s['qvol'],
+                                        c['data'], c['assistente'], c['nf'], s['cnpj_e'], cnpj_d, c['just'], nome_d, 
                                         c['transp_sai'] if c else "N/D", c['cfop_sai'] if c else "N/D", padrao, db_id))
+                    else:
+                        # Se NÃO tem a conclusão, atualiza rigorosamente os dados da solicitação (volume, qvol, material, etc.)
+                        cursor.execute('''UPDATE trocas SET 
+                                          assunto=?, armazem=?, data_hora_solicitacao=?, nf_entrada=?, emitente=?, material=?, cfop=?, volume=?, qvol=?,
+                                          cnpj_emitente=?, cnpj_destinatario=?, nome_destinatario=?
+                                          WHERE id=?''',
+                                       (s['assunto'], s['armazem'], s['data'], s['nf'], s['emit'], s['mat'], s['cfop'], s['vol'], s['qvol'],
+                                        s['cnpj_e'], s['cnpj_d'], s['nome_d'], db_id))
                 else:
                     cursor.execute('''INSERT INTO trocas (assunto, armazem, data_hora_solicitacao, nf_entrada, emitente, material, cfop, volume, qvol, status, data_hora_conclusao, assistente, nf_saida, cnpj_emitente, cnpj_destinatario, justificativa, nome_destinatario, transportadora_saida, cfop_saida, padronizado_xml, entry_id) 
                                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
