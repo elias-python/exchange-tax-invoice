@@ -23,7 +23,7 @@ class AppMosaicMaster:
         self.root = root
         self.root.title("Monitor de Trocas - The Mosaic Company")
         self.root.geometry("800x670")
-        self.root.configure(bg="#F4F6F9")
+        self.root.configure(bg="#F4F6F9") 
         
         self.is_running = False
         self.auto_mode = tk.BooleanVar(value=True)
@@ -64,7 +64,7 @@ class AppMosaicMaster:
         lbl_dias = tk.Label(frame_dias, text="Analisar e-mails dos últimos:", font=("Segoe UI", 9, "bold"), fg="#555555", bg="#FFFFFF")
         lbl_dias.pack(side="left", padx=5)
         
-        self.janela_dias = tk.IntVar(value=7)
+        self.janela_dias = tk.IntVar(value=7) 
         self.cb_dias = ttk.Combobox(frame_dias, textvariable=self.janela_dias, values=[1, 3, 7, 15, 30, 60, 90], width=5, state="readonly")
         self.cb_dias.pack(side="left", padx=5)
         
@@ -111,7 +111,7 @@ class AppMosaicMaster:
         if not texto: return ""
         return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8').lower()
 
-    # ================= LEITURA XML AJUSTADA =================
+    # ================= LEITURA XML =================
     def ler_xml(self, caminho):
         d = {"nf": "N/D", "material": "N/D", "volume": "0", "qvol": "0", "emitente": "N/D", "cfop": "N/D", 
              "cnpj_emitente": "N/D", "cnpj_destinatario": "N/D", "nome_destinatario": "N/D", "transportadora": "N/D"}
@@ -198,6 +198,9 @@ class AppMosaicMaster:
         pythoncom.CoInitialize()
         self.lbl_etapa.config(text="Estabelecendo conexão com o Banco de Dados e Outlook...")
         self.root.update_idletasks()
+        
+        # --- LISTA PARA ARMAZENAR OS ALERTAS ---
+        alertas_justificativas = []
         
         try:
             conn = sqlite3.connect(BANCO_SQLITE); cursor = conn.cursor()
@@ -342,9 +345,11 @@ class AppMosaicMaster:
                 if row:
                     db_id, db_status = row
                     
-                    # --- NOVA LÓGICA DE ATUALIZAÇÃO (SOBREPOSIÇÃO) ---
                     if c:
-                        # Se encontrou a conclusão agora, atualiza os dados do XML e os dados da conclusão
+                        # --- CAPTURA DE ALERTA: SE O STATUS ERA PENDENTE, ENTÃO É UMA JUSTIFICATIVA INÉDITA ---
+                        if db_status == "PENDENTE" and c['just'] != "-":
+                            alertas_justificativas.append(f"• NF: {c['nf']} ({c['assistente']}) - Motivo: {c['just']}")
+
                         cursor.execute('''UPDATE trocas SET 
                                           assunto=?, armazem=?, data_hora_solicitacao=?, nf_entrada=?, emitente=?, material=?, cfop=?, volume=?, qvol=?,
                                           status="CONCLUÍDO", data_hora_conclusao=?, assistente=?, nf_saida=?, 
@@ -355,7 +360,6 @@ class AppMosaicMaster:
                                         c['data'], c['assistente'], c['nf'], s['cnpj_e'], cnpj_d, c['just'], nome_d, 
                                         c['transp_sai'] if c else "N/D", c['cfop_sai'] if c else "N/D", padrao, db_id))
                     else:
-                        # Se NÃO tem a conclusão, atualiza rigorosamente os dados da solicitação (volume, qvol, material, etc.)
                         cursor.execute('''UPDATE trocas SET 
                                           assunto=?, armazem=?, data_hora_solicitacao=?, nf_entrada=?, emitente=?, material=?, cfop=?, volume=?, qvol=?,
                                           cnpj_emitente=?, cnpj_destinatario=?, nome_destinatario=?
@@ -363,6 +367,10 @@ class AppMosaicMaster:
                                        (s['assunto'], s['armazem'], s['data'], s['nf'], s['emit'], s['mat'], s['cfop'], s['vol'], s['qvol'],
                                         s['cnpj_e'], s['cnpj_d'], s['nome_d'], db_id))
                 else:
+                    # --- CAPTURA DE ALERTA: SE A LINHA É NOVA E JÁ TEM CONCLUSÃO ---
+                    if c and c['just'] != "-":
+                        alertas_justificativas.append(f"• NF: {c['nf']} ({c['assistente']}) - Motivo: {c['just']}")
+
                     cursor.execute('''INSERT INTO trocas (assunto, armazem, data_hora_solicitacao, nf_entrada, emitente, material, cfop, volume, qvol, status, data_hora_conclusao, assistente, nf_saida, cnpj_emitente, cnpj_destinatario, justificativa, nome_destinatario, transportadora_saida, cfop_saida, padronizado_xml, entry_id) 
                                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                                    (s['assunto'], s['armazem'], s['data'], s['nf'], s['emit'], s['mat'], s['cfop'], s['vol'], s['qvol'], "CONCLUÍDO" if c else "PENDENTE", c['data'] if c else "-", c['assistente'] if c else "-", c['nf'] if c else "-", s['cnpj_e'], cnpj_d, c['just'] if c else "-", nome_d, c['transp_sai'] if c else "N/D", c['cfop_sai'] if c else "N/D", padrao, s['entry_id']))
@@ -378,7 +386,24 @@ class AppMosaicMaster:
             
             self.lbl_etapa.config(text="Rotina concluída com sucesso.", foreground="#0078D4")
             self.log("Processo finalizado. Arquivo Excel atualizado.")
-            
+
+            # ================== EXIBIÇÃO DOS ALERTAS ==================
+            if alertas_justificativas:
+                qtd_alertas = len(alertas_justificativas)
+                self.log(f"AVISO: {qtd_alertas} nova(s) justificativa(s) detectada(s) nesta rodada.")
+                
+                # Monta a mensagem formatada para o Pop-up
+                msg_alerta = f"Atenção, {qtd_alertas} nova(s) justificativa(s) de troca de nota foi/foram detectada(s):\n\n"
+                
+                # Limita a exibição para não quebrar a tela se houver 50 justificativas de uma vez
+                msg_alerta += "\n".join(alertas_justificativas[:15])
+                if qtd_alertas > 15:
+                    msg_alerta += f"\n\n... e mais {qtd_alertas - 15} justificativas não listadas aqui. Verifique o Excel."
+                
+                # Dispara o pop-up com segurança na Thread principal (evita travamento do Tkinter)
+                self.root.after(0, lambda: messagebox.showinfo("Novas Justificativas Detectadas", msg_alerta))
+            # =========================================================
+
         except Exception as e: 
             self.lbl_etapa.config(text="Falha durante a execução.", foreground="#D13438")
             self.log(f"ERRO DE SISTEMA: {str(e)}")
