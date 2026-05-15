@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard Unificado - Troca de Notas</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<style>
+:root {
+  --p647:#165788;
+  --p2214:#44748f;
+  --p330:#00544D;
+  --p7496:#5E7803;
+  --p383:#9EAB05;
+  --p130:#FBAF17;
+  --p152:#E57200;
+  --p1675:#A33D05;
+  --p401:#B6B1A9;
+  --black:#000;
+  --bg:#f4f5f2;
+  --panel:#fff;
+  --ink:#18222a;
+  --muted:#6f7470;
+  --line:#deded7;
+  --shadow:0 10px 26px rgba(16,34,43,.08);
+  --shadow-soft:0 4px 12px rgba(16,34,43,.05);
+  --radius:22px;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Inter,Segoe UI,Arial,sans-serif;
+  background:linear-gradient(160deg,#f4f7f9 0%,#f7fafb 55%,#eef3f5 100%);
+  color:var(--ink)
+}
+.app{display:grid;grid-template-columns:292px 1fr;min-height:100vh}
+.sidebar{
+  position:sticky;
+  top:0;
+  height:100vh;
+  background:linear-gradient(180deg,#143f62,#0e3936);
+  padding:24px 18px;
+  color:#fff;
+  box-shadow:18px 0 40px rgba(0,0,0,.10)
+}
+.brand{padding:8px 10px 20px;border-bottom:1px solid rgba(255,255,255,.16);margin-bottom:16px}
+.mosaic-mark{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.mosaic-symbol{width:30px;height:30px;position:relative;transform:rotate(45deg)}
+.mosaic-symbol i{position:absolute;display:block;width:14px;height:14px;border-radius:4px}
+.mosaic-symbol i:nth-child(1){left:0;top:0;background:#165788}
+.mosaic-symbol i:nth-child(2){right:0;top:0;background:#00544D}
+.mosaic-symbol i:nth-child(3){left:0;bottom:0;background:#FBAF17}
+.mosaic-symbol i:nth-child(4){right:0;bottom:0;background:#9EAB05}
+.mosaic-word{font-size:12px;font-weight:900;letter-spacing:.12em;color:#e9f0ed}
+.eyebrow{
+  display:inline-flex;
+  border-radius:999px;
+  background:rgba(255,255,255,.12);
+  padding:6px 10px;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:#d7e2df
+}
+.brand h1{font-size:22px;line-height:1.08;margin:14px 0 8px;letter-spacing:-.04em}
+.brand p{font-size:12px;color:#d6ddd9;line-height:1.45;margin:0}
+.nav{display:grid;gap:8px;margin-top:18px}
+.nav button{
+  width:100%;
+  text-align:left;
+  border:0;
+  border-radius:16px;
+  background:rgba(255,255,255,.07);
+  color:#e9efec;
+  padding:13px 14px;
+  font:700 13px Inter;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  transition:.2s
+}
+.nav button span{
+  width:28px;
+  height:28px;
+  border-radius:10px;
+  background:rgba(255,255,255,.10);
+  display:grid;
+  place-items:center;
+  font-size:12px
+}
+.nav button:hover,.nav button.active{background:rgba(255,255,255,.18);transform:translateX(2px)}
+.sidebar-footer{
+  position:absolute;
+  bottom:18px;
+  left:18px;
+  right:18px;
+  color:#c7d2ce;
+  font-size:11px;
+  line-height:1.45;
+  border-top:1px solid rgba(255,255,255,.14);
+  padding-top:14px
+}
+.main{padding:28px;overflow:hidden}
+.topbar{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px}
+.title h2{margin:0;font-size:34px;font-weight:900;letter-spacing:-.05em;color:#10222b;line-height:1.02}
+.title p{margin:8px 0 0;color:#5f6f77;font-size:14px;font-weight:500}
+.filters{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.filter{
+  background:rgba(255,255,255,.84);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px 12px;
+  font-size:12px;
+  color:var(--muted);
+  box-shadow:var(--shadow-soft)
+}
+.filter b{display:block;color:var(--ink);font-size:13px;font-weight:800;margin-top:3px}
+.filters .field{display:flex;flex-direction:column;gap:4px}
+.filters .field label{font-size:11px;color:#5c6b72;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.filters select,.filters input[type="file"],.filters button{
+  min-width:150px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  height:36px;
+  padding:0 10px;
+  background:#fff;
+  color:var(--ink)
+}
+.filters button{background:var(--p330);color:white;border:none;font-weight:700;cursor:pointer}
+.filters button:hover{filter:brightness(1.06)}
+.util-buttons{display:flex;gap:8px;flex-wrap:wrap}
+.util-buttons button{min-width:auto;padding:0 12px;background:var(--p647)}
+.util-buttons button.secondary{background:#44748f}
+.util-buttons button.neutral{background:#5f6f7b}
+.page{display:none;animation:fade .25s ease}
+.page.active{display:block}
+@keyframes fade{from{opacity:.2;transform:translateY(4px)}to{opacity:1;transform:none}}
+.kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin:18px 0}
+.kpi{
+  background:rgba(255,255,255,.96);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  padding:17px;
+  position:relative;
+  overflow:hidden
+}
+.kpi:before{content:'';position:absolute;left:0;top:0;height:4px;width:100%;background:#165788}
+.kpi span{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#5f6f77;font-weight:900}
+.kpi b{display:block;font-size:30px;font-weight:900;margin:8px 0 4px;letter-spacing:-.04em;color:#133f61}
+.kpi small{color:#6f7f86;font-size:12px;font-weight:500}
+.kpi.good:before{background:var(--p330)}
+.kpi.warn:before{background:var(--p152)}
+.kpi.danger:before{background:var(--p1675)}
+.kpi.good b{color:var(--p330)}
+.kpi.warn b{color:var(--p152)}
+.kpi.danger b{color:var(--p1675)}
+.grid{display:grid;grid-template-columns:1.35fr .95fr;gap:16px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.card{
+  background:rgba(255,255,255,.96);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  padding:18px;
+  overflow:hidden
+}
+.card-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;border-bottom:1px solid #eef2f4;padding-bottom:10px}
+.card-title h3{margin:0;font-size:18px;font-weight:800;letter-spacing:-.02em;color:#103248}
+.badge{font-size:11px;padding:6px 10px;border-radius:999px;background:#edf4f8;color:#165788;font-weight:900;border:1px solid #d7e5f0}
+.risk-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.risk-pill{border-radius:17px;padding:14px;border:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-weight:900;font-size:13px}
+.risk-pill b{font-size:24px}
+.risk-pill.high{background:#fbf1ec;color:var(--p1675);border-color:#ecd5cc}
+.risk-pill.medium{background:#fff5df;color:var(--p152);border-color:#f3dfb6}
+.risk-pill.low{background:#eef4e4;color:var(--p7496);border-color:#d9e2bc}
+.plot{height:320px}
+.table-wrap{overflow:auto;border-radius:16px;border:1px solid var(--line)}
+table{width:100%;border-collapse:collapse;font-size:12px;background:white;min-width:850px}
+th{text-align:left;background:#eef4f8;color:#2e4c5c;font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:11px 10px;position:sticky;top:0}
+td{border-top:1px solid #ecece7;padding:10px;white-space:nowrap}
+tr:hover td{background:#f5fbff}
+.status{display:inline-flex;border-radius:999px;color:white;padding:5px 8px;font-weight:900;font-size:11px}
+.status.high{background:var(--p1675)}
+.status.medium{background:var(--p152)}
+.status.low{background:var(--p7496)}
+.insight{padding:14px;border-radius:17px;background:#f4f2ea;border:1px solid #e3dfd1;color:#4a4a42;font-size:13px;line-height:1.45;margin-top:12px}
+.insight b{color:var(--p330)}
+.kanban{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.lane{background:#f8f8f5;border:1px solid var(--line);border-radius:18px;padding:12px;min-height:240px}
+.lane h4{margin:4px 0 10px;font-size:14px}
+.task{background:#fff;border:1px solid var(--line);border-radius:14px;padding:11px;margin-bottom:10px;box-shadow:0 8px 16px rgba(0,0,0,.04)}
+.task p,.task small{font-size:12px;color:var(--muted);display:block;margin:6px 0 0}
+@media(max-width:1280px){
+  .app{grid-template-columns:1fr}
+  .sidebar{position:relative;height:auto}
+  .sidebar-footer{position:relative;left:auto;right:auto;bottom:auto;margin-top:20px}
+  .kpi-grid{grid-template-columns:repeat(3,1fr)}
+  .grid,.grid2,.kanban{grid-template-columns:1fr}
+}
+@media(max-width:760px){
+  .main{padding:16px}
+  .kpi-grid{grid-template-columns:1fr 1fr}
+  .topbar{flex-direction:column}
+  .filters{width:100%}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mosaic-mark">
+        <div class="mosaic-symbol"><i></i><i></i><i></i><i></i></div>
+        <div class="mosaic-word">MOSAIC</div>
+      </div>
+      <span class="eyebrow">Mosaic Analytics</span>
+      <h1>Troca de Notas</h1>
+      <p>Dashboard completo com visão executiva, comercial, risco, auditoria e plano de ação.</p>
+    </div>
+    <nav class="nav">
+      <button class="active" data-page="p1"><span>01</span> Visão Executiva</button>
+      <button data-page="p2"><span>02</span> Análise Comercial</button>
+      <button data-page="p3"><span>03</span> Risco Operacional</button>
+      <button data-page="p4"><span>04</span> Base e Auditoria</button>
+      <button data-page="p5"><span>05</span> Plano de Ação</button>
+    </nav>
+    <div class="sidebar-footer">
+      Cores Mosaic aplicadas com foco em legibilidade executiva.
+      Faça upload do CSV para alimentar todas as páginas automaticamente.
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="title">
+        <h2 id="pageTitle">Visão Executiva</h2>
+        <p id="pageSub">Cockpit de volume, produtividade e tempo de atendimento.</p>
+      </div>
+      <div class="filters">
+        <div class="field">
+          <label>Arquivo CSV</label>
+          <input id="csvFile" type="file" accept=".csv" />
+        </div>
+        <div class="field">
+          <label>Região</label>
+          <select id="fRegiao"><option value="">Todas</option></select>
+        </div>
+        <div class="field">
+          <label>Assistente</label>
+          <select id="fAssist"><option value="">Todos</option></select>
+        </div>
+        <div class="field">
+          <label>Grupo</label>
+          <select id="fGrupo"><option value="">Todos</option></select>
+        </div>
+        <div class="field">
+          <label>Armazém</label>
+          <select id="fArmazem"><option value="">Todos</option></select>
+        </div>
+        <div class="field">
+          <label>Ação</label>
+          <button id="btnReset">Limpar filtros</button>
+        </div>
+        <div class="field">
+          <label>Utilitários</label>
+          <div class="util-buttons">
+            <button id="btnPdf">Exportar PDF</button>
+            <button id="btnSaveSnap" class="secondary">Salvar snapshot</button>
+            <button id="btnLoadSnap" class="neutral">Restaurar</button>
+          </div>
+        </div>
+        <div class="filter">Status da carga<b id="txtCarga">Aguardando arquivo</b></div>
+        <div class="filter">Registros filtrados<b id="txtRegistros">0</b></div>
+        <div class="filter">Snapshot<b id="txtSnapshot">Nenhum salvo</b></div>
+      </div>
+    </div>
+
+    <section class="page active" id="p1">
+      <div class="kpi-grid">
+        <div class="kpi"><span>Total de registros</span><b id="k_total">0</b><small>Linhas filtradas</small></div>
+        <div class="kpi"><span>Volume final</span><b id="k_volume">0</b><small>Soma de Volume Final</small></div>
+        <div class="kpi good"><span>Tempo médio</span><b id="k_tempo">0 min</b><small>Recebimento -> Envio</small></div>
+        <div class="kpi warn"><span>P90 tempo</span><b id="k_p90">0 min</b><small>Faixa crítica operacional</small></div>
+        <div class="kpi"><span>Com justificativa</span><b id="k_just">0</b><small>Preenchimento</small></div>
+        <div class="kpi good"><span>Clientes únicos</span><b id="k_clientes">0</b><small>Base ativa</small></div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="card-title"><h3>Volume por Assistente</h3><span class="badge">Top Operação</span></div>
+          <div id="chartAssist" class="plot"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><h3>Distribuição por Região</h3><span class="badge">Cobertura</span></div>
+          <div id="chartRegiao" class="plot"></div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-title"><h3>Grupo Material</h3><span class="badge">Composição</span></div>
+          <div id="chartGrupo" class="plot"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><h3>Fluxo de Faixa Horária</h3><span class="badge">Recebimento -> Envio</span></div>
+          <div id="chartFaixa" class="plot"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="p2">
+      <div class="kpi-grid">
+        <div class="kpi"><span>Armazéns únicos</span><b id="k_armazens">0</b><small>Operação ativa</small></div>
+        <div class="kpi"><span>Materiais únicos</span><b id="k_materiais">0</b><small>Portfólio</small></div>
+        <div class="kpi"><span>NFs únicas</span><b id="k_nf">0</b><small>Notas processadas</small></div>
+        <div class="kpi good"><span>Volume médio por NF</span><b id="k_vnf">0</b><small>Eficiência de lote</small></div>
+        <div class="kpi warn"><span>Clientes top 5</span><b id="k_top5">0%</b><small>Concentração</small></div>
+        <div class="kpi"><span>Armazém líder</span><b id="k_lider">-</b><small>Maior volume</small></div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="card-title"><h3>Top Clientes por Volume</h3><span class="badge">Comercial</span></div>
+          <div id="chartClientes" class="plot"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><h3>Top Armazéns por Volume</h3><span class="badge">Capacidade</span></div>
+          <div id="chartArmazens" class="plot"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-title"><h3>Ranking Comercial Detalhado</h3><span class="badge">Volume e Tempo</span></div>
+        <div class="table-wrap"><table><thead id="tbComHead"></thead><tbody id="tbComBody"></tbody></table></div>
+      </div>
+    </section>
+
+    <section class="page" id="p3">
+      <div class="kpi-grid">
+        <div class="kpi danger"><span>Risco alto</span><b id="k_risco_alto">0</b><small>Tempo > 180 min</small></div>
+        <div class="kpi warn"><span>Risco médio</span><b id="k_risco_med">0</b><small>Tempo 90-180 min</small></div>
+        <div class="kpi good"><span>Risco baixo</span><b id="k_risco_baixo">0</b><small>Tempo <= 90 min</small></div>
+        <div class="kpi danger"><span>Sem justificativa</span><b id="k_sem_just">0</b><small>Campos em branco</small></div>
+        <div class="kpi warn"><span>Tempo máximo</span><b id="k_tempo_max">0 min</b><small>Pior caso</small></div>
+        <div class="kpi"><span>Assistentes em risco alto</span><b id="k_ast_crit">0</b><small>Concentração crítica</small></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><h3>Status de risco operacional</h3><span class="badge">Governança</span></div>
+        <div class="risk-strip">
+          <div class="risk-pill high"><span>Alto</span><b id="pill_alto">0</b></div>
+          <div class="risk-pill medium"><span>Médio</span><b id="pill_medio">0</b></div>
+          <div class="risk-pill low"><span>Baixo</span><b id="pill_baixo">0</b></div>
+        </div>
+        <div class="insight"><b>Leitura automática:</b> risco definido pelo tempo entre recebimento e envio. Ajuste limites no script se necessário.</div>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-title"><h3>Maior tempo por Assistente</h3><span class="badge">SLA</span></div>
+          <div id="chartSLA" class="plot"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><h3>Eventos críticos</h3><span class="badge">Prioridade</span></div>
+          <div class="table-wrap"><table><thead id="tbRiskHead"></thead><tbody id="tbRiskBody"></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="p4">
+      <div class="kpi-grid">
+        <div class="kpi"><span>Colunas detectadas</span><b id="k_colunas">0</b><small>Estrutura do CSV</small></div>
+        <div class="kpi"><span>Linhas válidas</span><b id="k_validas">0</b><small>Sem descarte</small></div>
+        <div class="kpi warn"><span>Hora inválida</span><b id="k_hora_invalida">0</b><small>Sem parsing de hora</small></div>
+        <div class="kpi"><span>Duplicadas por NF</span><b id="k_dup_nf">0</b><small>Ocorrências extras</small></div>
+        <div class="kpi"><span>Sem Assistente</span><b id="k_sem_ass">0</b><small>Qualidade</small></div>
+        <div class="kpi"><span>Sem Armazém</span><b id="k_sem_arm">0</b><small>Qualidade</small></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><h3>Auditoria de Qualidade</h3><span class="badge">Checklist</span></div>
+        <div class="table-wrap"><table><thead><tr><th>Validação</th><th>Resultado</th><th>Status</th></tr></thead><tbody id="tbAudit"></tbody></table></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-title"><h3>Amostra da Base Filtrada</h3><span class="badge">Rastreabilidade</span></div>
+        <div class="table-wrap"><table><thead id="tbBaseHead"></thead><tbody id="tbBaseBody"></tbody></table></div>
+      </div>
+    </section>
+
+    <section class="page" id="p5">
+      <div class="kpi-grid">
+        <div class="kpi"><span>Ações propostas</span><b id="k_acoes">0</b><small>Itens no kanban</small></div>
+        <div class="kpi danger"><span>Agora</span><b id="k_agora">0</b><small>Risco alto</small></div>
+        <div class="kpi warn"><span>24h</span><b id="k_24h">0</b><small>Risco médio</small></div>
+        <div class="kpi good"><span>Rotina</span><b id="k_rotina">0</b><small>Risco baixo</small></div>
+        <div class="kpi"><span>Com justificativa</span><b id="k_act_just">0</b><small>Para reunião</small></div>
+        <div class="kpi"><span>Sem justificativa</span><b id="k_act_nojust">0</b><small>Completar base</small></div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="card-title"><h3>Kanban executivo</h3><span class="badge">Priorização</span></div>
+          <div class="kanban">
+            <div class="lane"><h4>Agora</h4><div id="laneAgora"></div></div>
+            <div class="lane"><h4>24h</h4><div id="lane24h"></div></div>
+            <div class="lane"><h4>Rotina</h4><div id="laneRotina"></div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title"><h3>Roteiro de reunião</h3><span class="badge">Gestão</span></div>
+          <div class="insight"><b>1.</b> Abrir com volume, tempo médio e concentração por assistente.</div>
+          <div class="insight"><b>2.</b> Tratar itens de risco alto (tempo acima de 180 min).</div>
+          <div class="insight"><b>3.</b> Verificar justificativas ausentes em casos críticos.</div>
+          <div class="insight"><b>4.</b> Definir responsável e prazo para cada ação do kanban.</div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-title"><h3>Plano de Ação Detalhado</h3><span class="badge">Follow-up</span></div>
+        <div class="table-wrap"><table><thead id="tbActionHead"></thead><tbody id="tbActionBody"></tbody></table></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+const titles = {
+  p1: ["Visão Executiva", "Cockpit de volume, produtividade e tempo de atendimento."],
+  p2: ["Análise Comercial", "Concentração por cliente, armazém e material."],
+  p3: ["Risco Operacional", "Mapa de SLA, justificativas e eventos críticos."],
+  p4: ["Base e Auditoria", "Qualidade de dados, duplicidades e rastreabilidade."],
+  p5: ["Plano de Ação", "Priorização executiva com kanban automático."]
+};
+
+const state = {
+  rows: [],
+  filtered: [],
+  headers: [],
+  activePage: "p1"
+};
+
+const SNAPSHOT_KEY = "mosaic_dashboard_trocas_snapshot_v1";
+
+const ui = {
+  file: document.getElementById("csvFile"),
+  regiao: document.getElementById("fRegiao"),
+  assist: document.getElementById("fAssist"),
+  grupo: document.getElementById("fGrupo"),
+  armazem: document.getElementById("fArmazem"),
+  txtCarga: document.getElementById("txtCarga"),
+  txtRegistros: document.getElementById("txtRegistros"),
+  txtSnapshot: document.getElementById("txtSnapshot"),
+  btnPdf: document.getElementById("btnPdf"),
+  btnSaveSnap: document.getElementById("btnSaveSnap"),
+  btnLoadSnap: document.getElementById("btnLoadSnap")
+};
+
+function safe(v){ return v == null ? "" : String(v).trim(); }
+function pct(n,d){ return d ? ((n*100)/d).toFixed(1).replace('.',',')+"%" : "0,0%"; }
+function num(v){
+  const n = Number(safe(v).replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+function uniqueHeaderNames(headers){
+  const seen = {};
+  return headers.map((h) => {
+    const name = safe(h) || "coluna";
+    seen[name] = (seen[name] || 0) + 1;
+    return seen[name] > 1 ? name + "_" + seen[name] : name;
+  });
+}
+function excelMinutes(v){
+  const m = safe(v).match(/\s(\d{2}):(\d{2}):(\d{2})$/);
+  if(!m) return null;
+  return Number(m[1])*60 + Number(m[2]) + Number(m[3])/60;
+}
+function diffMin(rec,env){
+  const r = excelMinutes(rec);
+  const e = excelMinutes(env);
+  if(r == null || e == null) return null;
+  let d = e - r;
+  if(d < 0) d += 24*60;
+  return d;
+}
+function riskLevel(row){
+  const d = diffMin(row["Hora Recebimento"], row["Hora Envio"]);
+  if(d == null) return "medio";
+  if(d > 180) return "alto";
+  if(d > 90) return "medio";
+  return "baixo";
+}
+function aggregate(rows, field, mode){
+  const map = new Map();
+  rows.forEach(r => {
+    const key = safe(r[field]) || "(vazio)";
+    const prev = map.get(key) || 0;
+    map.set(key, prev + (mode === "sumVolume" ? num(r["Volume Final"]) : 1));
+  });
+  return Array.from(map.entries()).sort((a,b)=>b[1]-a[1]);
+}
+function fillSelect(el, values){
+  const cur = el.value;
+  const first = el.options[0] ? el.options[0].text : "Todos";
+  el.innerHTML = "";
+  el.add(new Option(first, ""));
+  values.forEach(v => el.add(new Option(v,v)));
+  el.value = values.includes(cur) ? cur : "";
+}
+function setText(id, txt){ const el=document.getElementById(id); if(el) el.textContent = txt; }
+
+function switchPage(id){
+  if(!titles[id]) return;
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const btn = document.querySelector(`.nav button[data-page="${id}"]`);
+  if(btn) btn.classList.add('active');
+  const page = document.getElementById(id);
+  if(page) page.classList.add('active');
+  document.getElementById('pageTitle').textContent=titles[id][0];
+  document.getElementById('pageSub').textContent=titles[id][1];
+  state.activePage = id;
+}
+
+function formatSnapshotDate(iso){
+  const d = new Date(iso);
+  if(Number.isNaN(d.getTime())) return "Snapshot salvo";
+  return d.toLocaleString("pt-BR");
+}
+
+function saveSnapshot(){
+  const snap = {
+    ts: new Date().toISOString(),
+    page: state.activePage,
+    filters: {
+      regiao: ui.regiao.value,
+      assist: ui.assist.value,
+      grupo: ui.grupo.value,
+      armazem: ui.armazem.value
+    }
+  };
+  localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
+  ui.txtSnapshot.textContent = "Salvo em " + formatSnapshotDate(snap.ts);
+}
+
+function loadSnapshot(){
+  const raw = localStorage.getItem(SNAPSHOT_KEY);
+  if(!raw){
+    ui.txtSnapshot.textContent = "Nenhum snapshot encontrado";
+    return;
+  }
+  let snap;
+  try {
+    snap = JSON.parse(raw);
+  } catch {
+    ui.txtSnapshot.textContent = "Snapshot inválido";
+    return;
+  }
+  ui.regiao.value = snap?.filters?.regiao || "";
+  ui.assist.value = snap?.filters?.assist || "";
+  ui.grupo.value = snap?.filters?.grupo || "";
+  ui.armazem.value = snap?.filters?.armazem || "";
+  applyFilters();
+  switchPage(snap?.page || "p1");
+  ui.txtSnapshot.textContent = "Restaurado de " + formatSnapshotDate(snap.ts);
+}
+
+async function exportCurrentPagePdf(){
+  const activePage = document.querySelector(".page.active");
+  if(!activePage) return;
+  ui.txtCarga.textContent = "Gerando PDF...";
+  const canvas = await html2canvas(activePage, {scale:2, backgroundColor:"#ffffff", useCORS:true});
+  const imgData = canvas.toDataURL("image/png");
+  const { jsPDF } = window.jspdf;
+  const isLandscape = canvas.width > canvas.height;
+  const pdf = new jsPDF(isLandscape ? "l" : "p", "mm", "a4");
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const ratio = Math.min(pageW / canvas.width, pageH / canvas.height);
+  const w = canvas.width * ratio;
+  const h = canvas.height * ratio;
+  const x = (pageW - w) / 2;
+  const y = 6;
+  pdf.addImage(imgData, "PNG", x, y, w, h);
+  pdf.save("dashboard_trocas_" + state.activePage + ".pdf");
+  ui.txtCarga.textContent = "PDF exportado";
+}
+
+function parseCSVText(text){
+  Papa.parse(text, {
+    delimiter: ",",
+    header: false,
+    skipEmptyLines: true,
+    complete: (res) => {
+      const lines = res.data.filter(r => Array.isArray(r) && r.some(c => safe(c) !== ""));
+      if(lines.length < 2){
+        ui.txtCarga.textContent = "Arquivo sem dados válidos";
+        return;
+      }
+      const headers = uniqueHeaderNames(lines[0]);
+      state.headers = headers;
+      state.rows = lines.slice(1).map(line => {
+        const row = {};
+        headers.forEach((h,i)=> row[h] = line[i] == null ? "" : String(line[i]).trim());
+        return row;
+      });
+
+      fillSelect(ui.regiao, [...new Set(state.rows.map(r => safe(r["Região"]).trim()).filter(Boolean))].sort());
+      fillSelect(ui.assist, [...new Set(state.rows.map(r => safe(r["Assistentes"]).trim()).filter(Boolean))].sort());
+      fillSelect(ui.grupo, [...new Set(state.rows.map(r => safe(r["Grupo Material"]).trim()).filter(Boolean))].sort());
+      fillSelect(ui.armazem, [...new Set(state.rows.map(r => safe(r["Armazém Origem"]).trim()).filter(Boolean))].sort());
+
+      ui.txtCarga.textContent = "Carga concluída";
+      applyFilters();
+    },
+    error: () => {
+      ui.txtCarga.textContent = "Falha ao ler CSV";
+    }
+  });
+}
+
+function applyFilters(){
+  state.filtered = state.rows.filter(r => {
+    const ok1 = !ui.regiao.value || safe(r["Região"]) === ui.regiao.value;
+    const ok2 = !ui.assist.value || safe(r["Assistentes"]) === ui.assist.value;
+    const ok3 = !ui.grupo.value || safe(r["Grupo Material"]) === ui.grupo.value;
+    const ok4 = !ui.armazem.value || safe(r["Armazém Origem"]) === ui.armazem.value;
+    return ok1 && ok2 && ok3 && ok4;
+  });
+  ui.txtRegistros.textContent = state.filtered.length.toLocaleString("pt-BR");
+  renderAll();
+}
+
+function renderP1(){
+  const rows = state.filtered;
+  const total = rows.length;
+  const vol = rows.reduce((s,r)=>s+num(r["Volume Final"]),0);
+  const diffs = rows.map(r=>diffMin(r["Hora Recebimento"], r["Hora Envio"])).filter(v=>v!=null);
+  const avg = diffs.length ? diffs.reduce((a,b)=>a+b,0)/diffs.length : 0;
+  const p90 = diffs.length ? diffs.slice().sort((a,b)=>a-b)[Math.min(diffs.length-1, Math.floor(diffs.length*0.9))] : 0;
+  const just = rows.filter(r=>safe(r["Justificativa"])!=="").length;
+  const clients = new Set(rows.map(r=>safe(r["Cliente"]).toUpperCase()).filter(Boolean)).size;
+
+  setText("k_total", total.toLocaleString("pt-BR"));
+  setText("k_volume", vol.toLocaleString("pt-BR"));
+  setText("k_tempo", avg.toFixed(1).replace('.',',') + " min");
+  setText("k_p90", String(Math.round(p90)).replace('.',',') + " min");
+  setText("k_just", just.toLocaleString("pt-BR"));
+  setText("k_clientes", clients.toLocaleString("pt-BR"));
+
+  const byAssist = aggregate(rows, "Assistentes", "sumVolume").slice(0, 12);
+  Plotly.newPlot("chartAssist", [{
+    type:"bar", orientation:"h",
+    x: byAssist.map(d=>d[1]), y: byAssist.map(d=>d[0]),
+    marker:{color:"#165788"}
+  }], {margin:{l:180,r:20,t:10,b:30},paper_bgcolor:"#fff",plot_bgcolor:"#fff",xaxis:{gridcolor:"#edf2f5"}}, {displayModeBar:false,responsive:true});
+
+  const byReg = aggregate(rows, "Região", "count");
+  Plotly.newPlot("chartRegiao", [{
+    type:"pie", labels: byReg.map(d=>d[0]), values: byReg.map(d=>d[1]), hole:0.5,
+    marker:{colors:["#00544D", "#165788", "#44748f", "#9EAB05", "#FBAF17", "#E57200"]}
+  }], {margin:{l:10,r:10,t:10,b:10},paper_bgcolor:"#fff"}, {displayModeBar:false,responsive:true});
+
+  const byGrupo = aggregate(rows, "Grupo Material", "count");
+  Plotly.newPlot("chartGrupo", [{
+    type:"bar", x: byGrupo.map(d=>d[0]), y: byGrupo.map(d=>d[1]),
+    marker:{color:"#00544D"}
+  }], {margin:{l:40,r:20,t:10,b:80},paper_bgcolor:"#fff",plot_bgcolor:"#fff",yaxis:{gridcolor:"#edf2f5"}}, {displayModeBar:false,responsive:true});
+
+  const map = new Map();
+  rows.forEach(r=>{
+    const k = (safe(r["Faixa Horária - Recebimento"])||"(vazio)") + " -> " + (safe(r["Faixa Horária - Envio"])||"(vazio)");
+    map.set(k, (map.get(k)||0)+1);
+  });
+  const flow = Array.from(map.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  Plotly.newPlot("chartFaixa", [{
+    type:"bar", orientation:"h", x: flow.map(d=>d[1]), y: flow.map(d=>d[0]), marker:{color:"#E57200"}
+  }], {margin:{l:220,r:20,t:10,b:30},paper_bgcolor:"#fff",plot_bgcolor:"#fff",xaxis:{gridcolor:"#edf2f5"}}, {displayModeBar:false,responsive:true});
+}
+
+function renderP2(){
+  const rows = state.filtered;
+  const wh = new Set(rows.map(r=>safe(r["Armazém Origem"]).toUpperCase()).filter(Boolean)).size;
+  const mats = new Set(rows.map(r=>safe(r["Descrição do Material"]).toUpperCase()).filter(Boolean)).size;
+  const nfs = new Set(rows.map(r=>safe(r["Nota Fiscal"])).filter(Boolean)).size;
+  const totalVol = rows.reduce((s,r)=>s+num(r["Volume Final"]),0);
+  const volNF = nfs ? totalVol / nfs : 0;
+
+  const byCli = aggregate(rows,"Cliente","sumVolume");
+  const top5 = byCli.slice(0,5).reduce((s,d)=>s+d[1],0);
+  const top5Pct = totalVol ? pct(top5,totalVol) : "0,0%";
+  const byArm = aggregate(rows,"Armazém Origem","sumVolume");
+  const lider = byArm[0] ? byArm[0][0] : "-";
+
+  setText("k_armazens", String(wh));
+  setText("k_materiais", String(mats));
+  setText("k_nf", String(nfs));
+  setText("k_vnf", volNF.toLocaleString("pt-BR",{maximumFractionDigits:1}));
+  setText("k_top5", top5Pct);
+  setText("k_lider", lider);
+
+  Plotly.newPlot("chartClientes", [{
+    type:"bar", orientation:"h", x: byCli.slice(0,10).map(d=>d[1]), y: byCli.slice(0,10).map(d=>d[0]), marker:{color:"#44748f"}
+  }], {margin:{l:220,r:20,t:10,b:30},paper_bgcolor:"#fff",plot_bgcolor:"#fff",xaxis:{gridcolor:"#edf2f5"}}, {displayModeBar:false,responsive:true});
+
+  Plotly.newPlot("chartArmazens", [{
+    type:"bar", x: byArm.slice(0,10).map(d=>d[0]), y: byArm.slice(0,10).map(d=>d[1]), marker:{color:"#5E7803"}
+  }], {margin:{l:40,r:20,t:10,b:90},paper_bgcolor:"#fff",plot_bgcolor:"#fff",yaxis:{gridcolor:"#edf2f5"}}, {displayModeBar:false,responsive:true});
+
+  const head = document.getElementById("tbComHead");
+  const body = document.getElementById("tbComBody");
+  head.innerHTML = "<tr><th>Cliente</th><th>Volume</th><th>Registros</th><th>Tempo médio (min)</th><th>Com justificativa</th></tr>";
+  const lines = byCli.slice(0,20).map(([cliente, vol]) => {
+    const sub = rows.filter(r => safe(r["Cliente"]) === cliente);
+    const d = sub.map(r=>diffMin(r["Hora Recebimento"], r["Hora Envio"])).filter(v=>v!=null);
+    const avg = d.length ? d.reduce((a,b)=>a+b,0)/d.length : 0;
+    const just = sub.filter(r=>safe(r["Justificativa"])!=="").length;
+    return `<tr><td>${cliente}</td><td>${vol.toLocaleString("pt-BR")}</td><td>${sub.length}</td><td>${avg.toFixed(1).replace('.',',')}</td><td>${just}</td></tr>`;
+  });
+  body.innerHTML = lines.join("");
+}
+
+function renderP3(){
+  const rows = state.filtered.map(r => ({...r, _d: diffMin(r["Hora Recebimento"], r["Hora Envio"])}));
+  const high = rows.filter(r => r._d != null && r._d > 180);
+  const med = rows.filter(r => r._d != null && r._d > 90 && r._d <= 180);
+  const low = rows.filter(r => r._d != null && r._d <= 90);
+  const nojust = rows.filter(r => safe(r["Justificativa"]) === "");
+  const max = rows.reduce((m,r)=>Math.max(m, r._d || 0), 0);
+  const astCrit = new Set(high.map(r=>safe(r["Assistentes"]).toUpperCase()).filter(Boolean)).size;
+
+  setText("k_risco_alto", String(high.length));
+  setText("k_risco_med", String(med.length));
+  setText("k_risco_baixo", String(low.length));
+  setText("k_sem_just", String(nojust.length));
+  setText("k_tempo_max", String(Math.round(max)) + " min");
+  setText("k_ast_crit", String(astCrit));
+  setText("pill_alto", String(high.length));
+  setText("pill_medio", String(med.length));
+  setText("pill_baixo", String(low.length));
+
+  const byAstMax = new Map();
+  rows.forEach(r => {
+    const k = safe(r["Assistentes"]) || "(vazio)";
+    const d = r._d || 0;
+    byAstMax.set(k, Math.max(byAstMax.get(k) || 0, d));
+  });
+  const ast = Array.from(byAstMax.entries()).sort((a,b)=>b[1]-a[1]).slice(0,12);
+
+  Plotly.newPlot("chartSLA", [{
+    type:"bar", orientation:"h", x: ast.map(d=>d[1]), y: ast.map(d=>d[0]),
+    marker:{color:ast.map(d=>d[1]>180?"#A33D05":d[1]>90?"#E57200":"#5E7803")}
+  }], {margin:{l:200,r:20,t:10,b:30},paper_bgcolor:"#fff",plot_bgcolor:"#fff",xaxis:{gridcolor:"#edf2f5"}}, {displayModeBar:false,responsive:true});
+
+  const critical = rows
+    .filter(r => r._d != null)
+    .sort((a,b)=>b._d-a._d)
+    .slice(0,20);
+  document.getElementById("tbRiskHead").innerHTML = "<tr><th>Região</th><th>Cliente</th><th>Assistente</th><th>NF</th><th>Tempo (min)</th><th>Risco</th><th>Justificativa</th></tr>";
+  document.getElementById("tbRiskBody").innerHTML = critical.map(r=>{
+    const risk = riskLevel(r);
+    const label = risk === "alto" ? "Alto" : risk === "medio" ? "Médio" : "Baixo";
+    return `<tr>
+      <td>${safe(r["Região"])}</td>
+      <td>${safe(r["Cliente"])}</td>
+      <td>${safe(r["Assistentes"])}</td>
+      <td>${safe(r["Nota Fiscal"])}</td>
+      <td>${Math.round(r._d)}</td>
+      <td><span class="status ${risk}">${label}</span></td>
+      <td>${safe(r["Justificativa"]) || "-"}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderP4(){
+  const rows = state.filtered;
+  const invalidTime = rows.filter(r => diffMin(r["Hora Recebimento"], r["Hora Envio"]) == null).length;
+  const nfCount = new Map();
+  rows.forEach(r => {
+    const nf = safe(r["Nota Fiscal"]);
+    if(!nf) return;
+    nfCount.set(nf, (nfCount.get(nf)||0)+1);
+  });
+  const dupNF = Array.from(nfCount.values()).filter(v => v > 1).reduce((a,b)=>a+(b-1),0);
+  const semAss = rows.filter(r => !safe(r["Assistentes"])).length;
+  const semArm = rows.filter(r => !safe(r["Armazém Origem"])).length;
+
+  setText("k_colunas", String(state.headers.length));
+  setText("k_validas", String(rows.length));
+  setText("k_hora_invalida", String(invalidTime));
+  setText("k_dup_nf", String(dupNF));
+  setText("k_sem_ass", String(semAss));
+  setText("k_sem_arm", String(semArm));
+
+  const audit = [
+    ["Parsing de hora", `${rows.length-invalidTime}/${rows.length} linhas válidas`, invalidTime === 0 ? "OK" : "Atenção"],
+    ["Notas duplicadas", `${dupNF} ocorrências extras`, dupNF === 0 ? "OK" : "Atenção"],
+    ["Assistente preenchido", `${rows.length-semAss}/${rows.length}`, semAss === 0 ? "OK" : "Atenção"],
+    ["Armazém preenchido", `${rows.length-semArm}/${rows.length}`, semArm === 0 ? "OK" : "Atenção"]
+  ];
+  document.getElementById("tbAudit").innerHTML = audit.map(a => `<tr><td>${a[0]}</td><td>${a[1]}</td><td>${a[2]}</td></tr>`).join("");
+
+  const cols = ["Região","Cliente","Armazém Origem","Descrição do Material","Volume Final","Assistentes","Hora Recebimento","Hora Envio","Justificativa","Nota Fiscal"];
+  document.getElementById("tbBaseHead").innerHTML = `<tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr>`;
+  document.getElementById("tbBaseBody").innerHTML = rows.slice(0,250).map(r=>`<tr>${cols.map(c=>`<td>${safe(r[c])}</td>`).join("")}</tr>`).join("");
+}
+
+function makeTask(r){
+  const d = diffMin(r["Hora Recebimento"], r["Hora Envio"]);
+  return {
+    cliente: safe(r["Cliente"]) || "(sem cliente)",
+    assist: safe(r["Assistentes"]) || "(sem assistente)",
+    nf: safe(r["Nota Fiscal"]) || "-",
+    tempo: d == null ? "n/d" : String(Math.round(d)) + " min",
+    just: safe(r["Justificativa"]) || "Sem justificativa",
+    risk: riskLevel(r)
+  };
+}
+
+function renderP5(){
+  const rows = state.filtered.slice();
+  rows.sort((a,b)=>(diffMin(b["Hora Recebimento"], b["Hora Envio"]) || 0) - (diffMin(a["Hora Recebimento"], a["Hora Envio"]) || 0));
+  const tasks = rows.slice(0,30).map(makeTask);
+
+  const now = tasks.filter(t=>t.risk==="alto");
+  const soon = tasks.filter(t=>t.risk==="medio");
+  const routine = tasks.filter(t=>t.risk==="baixo");
+
+  setText("k_acoes", String(tasks.length));
+  setText("k_agora", String(now.length));
+  setText("k_24h", String(soon.length));
+  setText("k_rotina", String(routine.length));
+  setText("k_act_just", String(tasks.filter(t=>t.just!=="Sem justificativa").length));
+  setText("k_act_nojust", String(tasks.filter(t=>t.just==="Sem justificativa").length));
+
+  const mk = (t)=>`<div class="task"><b>${t.cliente}</b><p>NF ${t.nf} • ${t.assist}</p><small>Tempo: ${t.tempo} • ${t.just}</small></div>`;
+  document.getElementById("laneAgora").innerHTML = now.slice(0,8).map(mk).join("") || "<div class='task'><b>Sem itens críticos</b><small>Sem risco alto no filtro atual.</small></div>";
+  document.getElementById("lane24h").innerHTML = soon.slice(0,8).map(mk).join("") || "<div class='task'><b>Sem itens médios</b><small>Sem risco médio no filtro atual.</small></div>";
+  document.getElementById("laneRotina").innerHTML = routine.slice(0,8).map(mk).join("") || "<div class='task'><b>Sem itens de rotina</b><small>Sem risco baixo no filtro atual.</small></div>";
+
+  document.getElementById("tbActionHead").innerHTML = "<tr><th>Prioridade</th><th>Cliente</th><th>Assistente</th><th>NF</th><th>Tempo</th><th>Ação sugerida</th></tr>";
+  document.getElementById("tbActionBody").innerHTML = tasks.slice(0,25).map(t=>{
+    const action = t.risk === "alto" ? "Tratar agora e revisar justificativa" : t.risk === "medio" ? "Acompanhar em 24h" : "Monitorar rotina";
+    const label = t.risk === "alto" ? "Alto" : t.risk === "medio" ? "Médio" : "Baixo";
+    return `<tr>
+      <td><span class="status ${t.risk}">${label}</span></td>
+      <td>${t.cliente}</td>
+      <td>${t.assist}</td>
+      <td>${t.nf}</td>
+      <td>${t.tempo}</td>
+      <td>${action}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderAll(){
+  renderP1();
+  renderP2();
+  renderP3();
+  renderP4();
+  renderP5();
+}
+
+ui.file.addEventListener("change", (e)=>{
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => parseCSVText(reader.result);
+  reader.readAsText(file, "utf-8");
+});
+
+[ui.regiao, ui.assist, ui.grupo, ui.armazem].forEach(el=>el.addEventListener("change", applyFilters));
+document.getElementById("btnReset").addEventListener("click", ()=>{
+  ui.regiao.value = "";
+  ui.assist.value = "";
+  ui.grupo.value = "";
+  ui.armazem.value = "";
+  applyFilters();
+});
+ui.btnSaveSnap.addEventListener("click", saveSnapshot);
+ui.btnLoadSnap.addEventListener("click", loadSnapshot);
+ui.btnPdf.addEventListener("click", ()=>{ exportCurrentPagePdf().catch(()=>{ ui.txtCarga.textContent = "Falha ao exportar PDF"; }); });
+
+{
+  const raw = localStorage.getItem(SNAPSHOT_KEY);
+  if(raw){
+    try {
+      const snap = JSON.parse(raw);
+      ui.txtSnapshot.textContent = "Disponível: " + formatSnapshotDate(snap.ts);
+    } catch {
+      ui.txtSnapshot.textContent = "Nenhum salvo";
+    }
+  }
+}
+
+document.querySelectorAll('.nav button').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const id=btn.dataset.page;
+    switchPage(id);
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+});
+</script>
+</body>
+</html>
