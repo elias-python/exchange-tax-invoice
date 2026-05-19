@@ -34,6 +34,11 @@ LISTA_ASSISTENTES = [
 
 
 class AppMosaicMaster:
+    def to_naive(self, dt):
+        if dt is not None and hasattr(dt, "tzinfo") and dt.tzinfo is not None:
+            return dt.replace(tzinfo=None)
+        return dt
+
     def __init__(self, root):
         self.root = root
         self.root.title("Monitor de Trocas - The Mosaic Company")
@@ -282,11 +287,15 @@ class AppMosaicMaster:
                 continue
             vistos.add(row[0])
             dt_solic = self.parse_data_hora(row[2])
-            if not dt_solic:
+            dt_solic_naive = self.to_naive(dt_solic)
+            sent_on_naive = self.to_naive(sent_on)
+            if not dt_solic_naive:
                 continue
-            if dt_solic <= sent_on and (melhor_dt is None or dt_solic > melhor_dt):
+            if dt_solic_naive <= sent_on_naive and (
+                melhor_dt is None or dt_solic_naive > melhor_dt
+            ):
                 melhor = row
-                melhor_dt = dt_solic
+                melhor_dt = dt_solic_naive
 
         return melhor
 
@@ -716,21 +725,25 @@ class AppMosaicMaster:
                     )
 
                     for t in reversed(transacoes_ativas):
+                        t_data_naive = self.to_naive(t["data_solic_dt"])
+                        msg_sent_naive = self.to_naive(msg.SentOn)
                         if (
                             t["concl"] is None
                             and t["cid"] == cid
-                            and t["data_solic_dt"] <= msg.SentOn
+                            and t_data_naive <= msg_sent_naive
                         ):
                             target = t
                             break
 
                     if not target and placa_resp:
                         for t in reversed(transacoes_ativas):
+                            t_data_naive = self.to_naive(t["data_solic_dt"])
+                            msg_sent_naive = self.to_naive(msg.SentOn)
                             if (
                                 t["concl"] is None
                                 and t["placa"]
                                 and t["placa"] == placa_resp
-                                and t["data_solic_dt"] <= msg.SentOn
+                                and t_data_naive <= msg_sent_naive
                             ):
                                 target = t
                                 self.log(
@@ -740,10 +753,12 @@ class AppMosaicMaster:
 
                     if not target and nf_resp:
                         for t in reversed(transacoes_ativas):
+                            t_data_naive = self.to_naive(t["data_solic_dt"])
+                            msg_sent_naive = self.to_naive(msg.SentOn)
                             if (
                                 t["concl"] is None
                                 and t.get("nf_ref") == nf_resp
-                                and t["data_solic_dt"] <= msg.SentOn
+                                and t_data_naive <= msg_sent_naive
                             ):
                                 target = t
                                 self.log(
@@ -865,31 +880,37 @@ class AppMosaicMaster:
                 for r in respostas_sem_match:
                     target = None
                     for t in reversed(transacoes_ativas):
+                        t_data_naive = self.to_naive(t["data_solic_dt"])
+                        r_sent_naive = self.to_naive(r["sent_on"])
                         if (
                             t["concl"] is None
                             and t["cid"] == r["cid"]
-                            and t["data_solic_dt"] <= r["sent_on"]
+                            and t_data_naive <= r_sent_naive
                         ):
                             target = t
                             break
 
                     if not target and r["placa"]:
                         for t in reversed(transacoes_ativas):
+                            t_data_naive = self.to_naive(t["data_solic_dt"])
+                            r_sent_naive = self.to_naive(r["sent_on"])
                             if (
                                 t["concl"] is None
                                 and t["placa"]
                                 and t["placa"] == r["placa"]
-                                and t["data_solic_dt"] <= r["sent_on"]
+                                and t_data_naive <= r_sent_naive
                             ):
                                 target = t
                                 break
 
                     if not target and r["nf"]:
                         for t in reversed(transacoes_ativas):
+                            t_data_naive = self.to_naive(t["data_solic_dt"])
+                            r_sent_naive = self.to_naive(r["sent_on"])
                             if (
                                 t["concl"] is None
                                 and t.get("nf_ref") == r["nf"]
-                                and t["data_solic_dt"] <= r["sent_on"]
+                                and t_data_naive <= r_sent_naive
                             ):
                                 target = t
                                 break
